@@ -1,10 +1,13 @@
 import React from 'react';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { AppProvider, useApp } from './context/AppContext';
 import { Header } from './components/layout/Header';
 import { SidebarNavigation } from './components/layout/SidebarNavigation';
 import { BottomNavigation } from './components/layout/BottomNavigation';
 import { ToastContainer } from './components/ui/Toast';
+import { TaskModal } from './components/tasks/TaskModal';
 
+import { AuthView } from './views/AuthView';
 import { DashboardView } from './views/DashboardView';
 import { DailyTrackerView } from './views/DailyTrackerView';
 import { AnalyticsCharts } from './components/analytics/AnalyticsCharts';
@@ -16,6 +19,7 @@ import { LearningView } from './views/LearningView';
 import { MilestonesView } from './components/milestones/MilestonesView';
 import { PomodoroTimer } from './components/pomodoro/PomodoroTimer';
 import { SettingsView } from './views/SettingsView';
+import { Flame } from 'lucide-react';
 
 const MainContent: React.FC = () => {
   const { activeTab } = useApp();
@@ -37,19 +41,61 @@ const MainContent: React.FC = () => {
   );
 };
 
+const AppShell: React.FC = () => {
+  const { isAddTaskModalOpen, setIsAddTaskModalOpen } = useApp();
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
+      <Header />
+      <div className="flex flex-1">
+        <SidebarNavigation />
+        <MainContent />
+      </div>
+      <BottomNavigation />
+      <ToastContainer />
+      <TaskModal
+        isOpen={isAddTaskModalOpen}
+        onClose={() => setIsAddTaskModalOpen(false)}
+      />
+    </div>
+  );
+};
+
+const AuthenticatedAppGate: React.FC = () => {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center space-y-4">
+        <div className="p-3 rounded-2xl bg-gradient-to-tr from-amber-500 via-orange-500 to-rose-500 text-white shadow-xl shadow-orange-500/20">
+          <Flame className="w-8 h-8 animate-pulse" />
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-indigo-500 animate-ping" />
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+            Loading Dashboard...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <AuthView />;
+  }
+
+  return (
+    <AppProvider key={user.id}>
+      <AppShell />
+    </AppProvider>
+  );
+};
+
 export function App() {
   return (
-    <AppProvider>
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
-        <Header />
-        <div className="flex flex-1">
-          <SidebarNavigation />
-          <MainContent />
-        </div>
-        <BottomNavigation />
-        <ToastContainer />
-      </div>
-    </AppProvider>
+    <AuthProvider>
+      <AuthenticatedAppGate />
+    </AuthProvider>
   );
 }
 

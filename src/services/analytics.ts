@@ -3,6 +3,7 @@ import type {
   HabitLog,
   Habit,
   WeeklySummary,
+  TaskItem,
 } from '../types';
 
 export class AnalyticsService {
@@ -25,11 +26,32 @@ export class AnalyticsService {
   }
 
   /**
-   * Calculate percentage of overall challenge completed (Days elapsed / 90)
+   * Calculate percentage of overall challenge completed based on actual completed habits and tasks.
+   * Returns 0% if there is no activity data or zero completed activities.
    */
-  static calculateChallengeOverallProgress(startDateStr: string): number {
-    const currentDay = this.calculateDayNumber(startDateStr);
-    return Math.round((currentDay / 90) * 100);
+  static calculateChallengeOverallProgress(
+    trackers: DailyTracker[],
+    logs: HabitLog[],
+    habits: Habit[],
+    tasks: TaskItem[] = []
+  ): number {
+    const activeHabits = habits.filter((h) => h.active);
+    const completedHabitsCount = logs.filter((l) => l.completed).length;
+    const completedTasksCount = tasks.filter((t) => t.completed).length;
+
+    const totalCompleted = completedHabitsCount + completedTasksCount;
+
+    const habitOpportunities =
+      trackers.length > 0 && activeHabits.length > 0
+        ? Math.max(trackers.length * activeHabits.length, logs.length)
+        : logs.length;
+    const taskOpportunities = tasks.length;
+
+    const totalOpportunities = habitOpportunities + taskOpportunities;
+
+    if (totalOpportunities === 0) return 0;
+
+    return Math.round((totalCompleted / totalOpportunities) * 100);
   }
 
   /**
@@ -97,13 +119,12 @@ export class AnalyticsService {
    */
   static calculateAverageMetric(
     habitId: string,
-    logs: HabitLog[],
-    defaultVal: number = 0
+    logs: HabitLog[]
   ): number {
     const habitLogs = logs.filter(
       (l) => l.habitId === habitId && (l.numericValue !== null || l.duration !== null)
     );
-    if (!habitLogs.length) return defaultVal;
+    if (!habitLogs.length) return 0;
 
     let total = 0;
     habitLogs.forEach((l) => {
@@ -118,6 +139,7 @@ export class AnalyticsService {
    */
   static calculateTotalMetric(habitId: string, logs: HabitLog[]): number {
     const habitLogs = logs.filter((l) => l.habitId === habitId);
+    if (!habitLogs.length) return 0;
     let total = 0;
     habitLogs.forEach((l) => {
       total += l.numericValue ?? (l.completed ? 1 : 0);
@@ -172,7 +194,7 @@ export class AnalyticsService {
       habits
     );
 
-    const waterAverage = this.calculateAverageMetric('habit-water', weekLogs, 2.5);
+    const waterAverage = this.calculateAverageMetric('habit-water', weekLogs);
 
     const meditationConsistency = this.calculateCategoryConsistency(
       'Health',
@@ -181,7 +203,7 @@ export class AnalyticsService {
       habits
     );
 
-    const screenTimeAverage = this.calculateAverageMetric('habit-scroll', weekLogs, 2.5);
+    const screenTimeAverage = this.calculateAverageMetric('habit-scroll', weekLogs);
     const pomodoroSessionsTotal = this.calculateTotalMetric('habit-pomodoro', weekLogs);
     const leetcodeProblemsTotal = this.calculateTotalMetric('habit-leetcode', weekLogs);
 

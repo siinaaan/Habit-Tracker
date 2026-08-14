@@ -42,9 +42,12 @@ export const DashboardView: React.FC = () => {
   const activeHabits = habits.filter((h) => h.active);
 
   // Calculated overall metrics
-  const overallProgress = activeChallenge
-    ? AnalyticsService.calculateChallengeOverallProgress(activeChallenge.startDate)
-    : 0;
+  const overallProgress = AnalyticsService.calculateChallengeOverallProgress(
+    trackers,
+    logs,
+    habits,
+    tasks
+  );
 
   const prayerConsistency = AnalyticsService.calculateCategoryConsistency(
     'Spiritual',
@@ -60,10 +63,10 @@ export const DashboardView: React.FC = () => {
     habits
   );
 
-  const averageWater = AnalyticsService.calculateAverageMetric('habit-water', logs, 2.5);
+  const averageWater = AnalyticsService.calculateAverageMetric('habit-water', logs);
   const totalPomodoros = AnalyticsService.calculateTotalMetric('habit-pomodoro', logs);
   const totalLeetcode = AnalyticsService.calculateTotalMetric('habit-leetcode', logs);
-  const averageScreenTime = AnalyticsService.calculateAverageMetric('habit-scroll', logs, 2.8);
+  const averageScreenTime = AnalyticsService.calculateAverageMetric('habit-scroll', logs);
 
   // Real Task statistics calculated directly from stored task data
   const totalTasksCount = tasks.length;

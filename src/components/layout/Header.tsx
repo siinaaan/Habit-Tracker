@@ -1,10 +1,10 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
 import { Button } from '../ui/Button';
 import { SyncStatusIndicator } from '../ui/SyncStatusIndicator';
 import { GlobalSearch } from '../search/GlobalSearch';
-import { TaskModal } from '../tasks/TaskModal';
-import { Timer, Sun, Moon, Calendar as CalendarIcon, Flame, Plus } from 'lucide-react';
+import { Timer, Sun, Moon, Calendar as CalendarIcon, Flame, Plus, LogOut, User as UserIcon } from 'lucide-react';
 
 export const Header: React.FC = () => {
   const {
@@ -16,9 +16,10 @@ export const Header: React.FC = () => {
     updateSettings,
     setActiveTab,
     resetToNewChallenge,
-    isAddTaskModalOpen,
     setIsAddTaskModalOpen,
   } = useApp();
+
+  const { user, signOut } = useAuth();
 
   const isDark = settings.theme === 'dark';
 
@@ -104,14 +105,27 @@ export const Header: React.FC = () => {
           >
             {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-400" />}
           </button>
+
+          {/* User Account / Sign Out Button */}
+          {user && (
+            <div className="flex items-center gap-1.5 pl-1.5 border-l border-slate-800">
+              <div className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-300">
+                <UserIcon className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                <span className="max-w-[140px] truncate font-medium">{user.email}</span>
+              </div>
+
+              <button
+                onClick={() => signOut()}
+                className="p-2 rounded-xl bg-slate-900 hover:bg-rose-500/10 border border-slate-800 hover:border-rose-500/30 text-slate-400 hover:text-rose-300 transition-colors cursor-pointer"
+                title={`Sign out (${user.email})`}
+                aria-label="Sign out"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
-
-      {/* Add Task Modal */}
-      <TaskModal
-        isOpen={isAddTaskModalOpen}
-        onClose={() => setIsAddTaskModalOpen(false)}
-      />
 
       {/* Demo Mode Banner */}
       {settings.isDemoMode && (

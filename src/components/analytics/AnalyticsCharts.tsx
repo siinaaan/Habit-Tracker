@@ -33,8 +33,8 @@ export const AnalyticsCharts: React.FC = () => {
 
     const pomodoroVal = AnalyticsService.calculateTotalMetric('habit-pomodoro', trackerLogs);
     const leetcodeVal = AnalyticsService.calculateTotalMetric('habit-leetcode', trackerLogs);
-    const waterVal = AnalyticsService.calculateAverageMetric('habit-water', trackerLogs, 0);
-    const meditationVal = AnalyticsService.calculateAverageMetric('habit-meditation', trackerLogs, 0);
+    const waterVal = AnalyticsService.calculateAverageMetric('habit-water', trackerLogs);
+    const meditationVal = AnalyticsService.calculateAverageMetric('habit-meditation', trackerLogs);
 
     return {
       day: `Day ${dayNum}`,

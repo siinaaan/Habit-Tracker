@@ -10,14 +10,6 @@ import type {
   AppSettings,
 } from '../types';
 import { DEFAULT_HABITS } from '../constants/defaultHabits';
-import {
-  DEMO_CHALLENGE,
-  DEMO_SETTINGS,
-  DEMO_GOALS,
-  DEMO_REFLECTIONS,
-  DEMO_LEARNING,
-  generateDemoDailyData,
-} from '../constants/initialDemoData';
 
 const KEYS = {
   CHALLENGES: 'life_upgrade_challenges',
@@ -50,6 +42,22 @@ function setItem<T>(key: string, value: T): void {
   }
 }
 
+export const DEFAULT_SETTINGS: AppSettings = {
+  theme: 'dark',
+  waterGoal: 2.5,
+  sleepGoalHours: 8,
+  screenTimeLimitHours: 3.5,
+  pomodoroSettings: {
+    focusDuration: 50,
+    shortBreakDuration: 10,
+    longBreakDuration: 20,
+    longBreakInterval: 4,
+    workStartTime: '09:30',
+    workEndTime: '16:30',
+  },
+  isDemoMode: false,
+};
+
 export class StorageService {
   // Initialize storage with clean zero-progress state if empty
   static initializeStorage(): void {
@@ -71,22 +79,6 @@ export class StorageService {
         updatedDate: new Date().toISOString(),
       };
 
-      const freshSettings: AppSettings = {
-        theme: 'dark',
-        waterGoal: 2.5,
-        sleepGoalHours: 8,
-        screenTimeLimitHours: 3.5,
-        pomodoroSettings: {
-          focusDuration: 50,
-          shortBreakDuration: 10,
-          longBreakDuration: 20,
-          longBreakInterval: 4,
-          workStartTime: '09:30',
-          workEndTime: '16:30',
-        },
-        isDemoMode: false,
-      };
-
       setItem(KEYS.CHALLENGES, [freshChallenge]);
       setItem(KEYS.HABITS, DEFAULT_HABITS);
       setItem(KEYS.TRACKERS, []);
@@ -94,7 +86,13 @@ export class StorageService {
       setItem(KEYS.GOALS, []);
       setItem(KEYS.REFLECTIONS, []);
       setItem(KEYS.LEARNING, []);
-      setItem(KEYS.SETTINGS, freshSettings);
+      setItem(KEYS.TASKS, []);
+      setItem(KEYS.SETTINGS, DEFAULT_SETTINGS);
+
+      // Clear habitService caches on fresh initialization
+      localStorage.removeItem('life_upgrade_completions_cache');
+      localStorage.removeItem('life_upgrade_challenge_cache');
+      localStorage.removeItem('life_upgrade_tasks_cache');
     }
   }
 
@@ -307,7 +305,7 @@ export class StorageService {
 
   // --- Settings ---
   static getSettings(): AppSettings {
-    return getItem<AppSettings>(KEYS.SETTINGS, DEMO_SETTINGS);
+    return getItem<AppSettings>(KEYS.SETTINGS, DEFAULT_SETTINGS);
   }
 
   static saveSettings(settings: AppSettings): AppSettings {
@@ -404,13 +402,19 @@ export class StorageService {
       updatedDate: new Date().toISOString(),
     };
 
-    // Keep habits, reset daily trackers, logs, and mark settings as real (non-demo) mode
+    // Keep habits, reset daily trackers, logs, tasks, and mark settings as real (non-demo) mode
     setItem(KEYS.CHALLENGES, [newChallenge]);
     setItem(KEYS.TRACKERS, []);
     setItem(KEYS.LOGS, []);
     setItem(KEYS.GOALS, []);
     setItem(KEYS.REFLECTIONS, []);
     setItem(KEYS.LEARNING, []);
+    setItem(KEYS.TASKS, []);
+
+    // Clear habitService caches
+    localStorage.removeItem('life_upgrade_completions_cache');
+    localStorage.removeItem('life_upgrade_challenge_cache');
+    localStorage.removeItem('life_upgrade_tasks_cache');
     
     const settings = this.getSettings();
     settings.isDemoMode = false;
@@ -427,6 +431,14 @@ export class StorageService {
     localStorage.removeItem(KEYS.GOALS);
     localStorage.removeItem(KEYS.REFLECTIONS);
     localStorage.removeItem(KEYS.LEARNING);
+    localStorage.removeItem(KEYS.TASKS);
     localStorage.removeItem(KEYS.SETTINGS);
+
+    // Clear habitService caches
+    localStorage.removeItem('life_upgrade_habits_cache');
+    localStorage.removeItem('life_upgrade_completions_cache');
+    localStorage.removeItem('life_upgrade_challenge_cache');
+    localStorage.removeItem('life_upgrade_tasks_cache');
+    localStorage.removeItem('life_upgrade_pending_sync_queue');
   }
 }

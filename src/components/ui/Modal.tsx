@@ -41,14 +41,14 @@ export const Modal: React.FC<ModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
+    <div className="fixed inset-0 z-[100] flex items-start justify-center p-4 pt-12 sm:pt-16 overflow-y-auto bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
       {/* Backdrop click */}
       <div className="fixed inset-0" onClick={onClose} aria-hidden="true" />
 
       {/* Modal Dialog */}
       <div
         className={clsx(
-          'relative w-full rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl z-10 max-h-[90vh] overflow-y-auto transform transition-all duration-300 scale-100',
+          'relative w-full my-auto rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl z-10 max-h-[calc(100vh-5rem)] overflow-y-auto transform transition-all duration-300 scale-100',
           maxWidthClasses[maxWidth]
         )}
         role="dialog"

@@ -1,7 +1,8 @@
 import { supabase, isSupabaseConfigured } from './supabase';
 import type { Habit, HabitLog, Challenge, TaskItem } from '../types';
 import { DEFAULT_HABITS } from '../constants/defaultHabits';
-import { DEMO_CHALLENGE, generateDemoDailyData } from '../constants/initialDemoData';
+import { generateDemoDailyData } from '../constants/initialDemoData';
+import { StorageService } from './storage';
 
 export type SyncState = 'synced' | 'syncing' | 'offline' | 'error';
 
@@ -435,9 +436,12 @@ class HabitService {
     let localCompletions = getLocalCache<HabitLog[]>(STORAGE_KEYS.COMPLETIONS, []);
 
     if (!localCompletions.length) {
-      const demoData = generateDemoDailyData();
-      localCompletions = demoData.logs;
-      setLocalCache(STORAGE_KEYS.COMPLETIONS, localCompletions);
+      const settings = StorageService.getSettings();
+      if (settings && settings.isDemoMode) {
+        const demoData = generateDemoDailyData();
+        localCompletions = demoData.logs;
+        setLocalCache(STORAGE_KEYS.COMPLETIONS, localCompletions);
+      }
     }
 
     if (navigator.onLine && isSupabaseConfigured()) {
@@ -565,8 +569,9 @@ class HabitService {
   // 3. CHALLENGE PROGRESS CRUD
   // ==========================================
   public async getChallengeProgress(): Promise<Challenge | null> {
-    let localChallenges = getLocalCache<Challenge[]>(STORAGE_KEYS.CHALLENGE, [DEMO_CHALLENGE]);
-    let active = localChallenges.find((c) => c.status === 'Active') || localChallenges[0] || DEMO_CHALLENGE;
+    const storageChallenges = StorageService.getChallenges();
+    let localChallenges = getLocalCache<Challenge[]>(STORAGE_KEYS.CHALLENGE, storageChallenges);
+    let active = localChallenges.find((c) => c.status === 'Active') || localChallenges[0] || StorageService.getActiveChallenge();
 
     if (navigator.onLine && isSupabaseConfigured()) {
       try {
@@ -587,7 +592,7 @@ class HabitService {
   }
 
   public async createChallengeProgress(data: Challenge): Promise<Challenge> {
-    const list = getLocalCache<Challenge[]>(STORAGE_KEYS.CHALLENGE, [DEMO_CHALLENGE]);
+    const list = getLocalCache<Challenge[]>(STORAGE_KEYS.CHALLENGE, []);
     const updated = [...list.filter((c) => c.id !== data.id), data];
     setLocalCache(STORAGE_KEYS.CHALLENGE, updated);
 
@@ -616,7 +621,7 @@ class HabitService {
   }
 
   public async updateChallengeProgress(id: string, updates: Partial<Challenge>): Promise<Challenge | null> {
-    const list = getLocalCache<Challenge[]>(STORAGE_KEYS.CHALLENGE, [DEMO_CHALLENGE]);
+    const list = getLocalCache<Challenge[]>(STORAGE_KEYS.CHALLENGE, []);
     const existing = list.find((c) => c.id === id);
     if (!existing) return null;
 
@@ -774,6 +779,14 @@ class HabitService {
     }
 
     return true;
+  }
+
+  public clearCache(): void {
+    localStorage.removeItem(STORAGE_KEYS.HABITS);
+    localStorage.removeItem(STORAGE_KEYS.COMPLETIONS);
+    localStorage.removeItem(STORAGE_KEYS.CHALLENGE);
+    localStorage.removeItem(STORAGE_KEYS.TASKS);
+    localStorage.removeItem(STORAGE_KEYS.PENDING_SYNC);
   }
 }
 
