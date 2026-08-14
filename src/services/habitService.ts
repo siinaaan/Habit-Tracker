@@ -11,6 +11,7 @@ export interface PendingSyncItem {
   table: 'habits' | 'habit_completions' | 'challenge_progress' | 'tasks';
   action: 'INSERT' | 'UPDATE' | 'DELETE';
   payload: any;
+  userId?: string;
   timestamp: number;
 }
 
@@ -77,6 +78,15 @@ class HabitService {
     this.syncListeners.forEach((listener) => listener(state));
   }
 
+  public async getAuthenticatedUserId(): Promise<string | null> {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      return session?.user?.id ?? null;
+    } catch (err) {
+      return null;
+    }
+  }
+
   // --- Pending Sync Queue Operations ---
   private getPendingQueue(): PendingSyncItem[] {
     return getLocalCache<PendingSyncItem[]>(STORAGE_KEYS.PENDING_SYNC, []);
@@ -98,6 +108,12 @@ class HabitService {
       return;
     }
 
+    const currentUserId = await this.getAuthenticatedUserId();
+    if (!currentUserId) {
+      this.setSyncState('offline');
+      return;
+    }
+
     const queue = this.getPendingQueue();
     if (queue.length === 0) {
       this.setSyncState('synced');
@@ -110,6 +126,17 @@ class HabitService {
     const remainingQueue: PendingSyncItem[] = [];
 
     for (const item of queue) {
+      // Security: Discard/skip queue item if created under a different user session
+      if (item.userId && item.userId !== currentUserId) {
+        console.warn(`Skipping pending queue item ${item.id} belonging to different user (${item.userId})`);
+        continue;
+      }
+
+      // Explicitly attach active user_id to payload
+      if (item.payload && typeof item.payload === 'object') {
+        item.payload.user_id = currentUserId;
+      }
+
       try {
         let error: any = null;
         if (item.action === 'INSERT' || item.action === 'UPDATE') {
@@ -121,7 +148,7 @@ class HabitService {
         }
 
         if (error) {
-          console.warn(`Sync failed for item ${item.id} on table ${item.table}:`, error);
+          console.warn(`Sync failed for item ${item.id} on table ${item.table}:`, error.message);
           remainingQueue.push(item);
         }
       } catch (err) {
@@ -191,8 +218,8 @@ class HabitService {
     };
   }
 
-  private mapTaskToDb(t: TaskItem): any {
-    return {
+  private mapTaskToDb(t: TaskItem, userId?: string): any {
+    const payload: any = {
       id: t.id,
       title: t.title,
       description: t.description || null,
@@ -206,6 +233,8 @@ class HabitService {
       created_at: t.createdDate,
       updated_at: t.updatedDate,
     };
+    if (userId) payload.user_id = userId;
+    return payload;
   }
 
   // --- DB Schema Converters (Handling camelCase & snake_case) ---
@@ -227,8 +256,8 @@ class HabitService {
     };
   }
 
-  private mapHabitToDb(h: Habit): any {
-    return {
+  private mapHabitToDb(h: Habit, userId?: string): any {
+    const payload: any = {
       id: h.id,
       name: h.name,
       description: h.description,
@@ -243,6 +272,8 @@ class HabitService {
       created_at: h.createdDate,
       updated_at: h.updatedDate,
     };
+    if (userId) payload.user_id = userId;
+    return payload;
   }
 
   private mapDbToCompletion(row: any): HabitLog {
@@ -260,8 +291,8 @@ class HabitService {
     };
   }
 
-  private mapCompletionToDb(c: HabitLog): any {
-    return {
+  private mapCompletionToDb(c: HabitLog, userId?: string): any {
+    const payload: any = {
       id: c.id,
       habit_id: c.habitId,
       daily_tracker_id: c.dailyTrackerId,
@@ -273,6 +304,8 @@ class HabitService {
       created_at: c.createdDate,
       updated_at: c.updatedDate,
     };
+    if (userId) payload.user_id = userId;
+    return payload;
   }
 
   private mapDbToChallenge(row: any): Challenge {
@@ -288,8 +321,8 @@ class HabitService {
     };
   }
 
-  private mapChallengeToDb(ch: Challenge): any {
-    return {
+  private mapChallengeToDb(ch: Challenge, userId?: string): any {
+    const payload: any = {
       id: ch.id,
       name: ch.name,
       start_date: ch.startDate,
@@ -299,6 +332,8 @@ class HabitService {
       created_at: ch.createdDate,
       updated_at: ch.updatedDate,
     };
+    if (userId) payload.user_id = userId;
+    return payload;
   }
 
   // ==========================================
@@ -316,9 +351,12 @@ class HabitService {
         const { data, error } = await supabase.from('habits').select('*').order('order', { ascending: true });
         if (!error && data && data.length > 0) {
           const remoteHabits = data.map(this.mapDbToHabit);
-          setLocalCache(STORAGE_KEYS.HABITS, remoteHabits);
+          const remoteIds = new Set(remoteHabits.map((h) => h.id));
+          const missingLocal = localHabits.filter((h) => !remoteIds.has(h.id));
+          const mergedHabits = [...remoteHabits, ...missingLocal];
+          setLocalCache(STORAGE_KEYS.HABITS, mergedHabits);
           this.setSyncState('synced');
-          return remoteHabits;
+          return mergedHabits;
         }
       } catch (err) {
         console.warn('Supabase fetch habits failed, using local cache:', err);
@@ -334,40 +372,51 @@ class HabitService {
     return habits.find((h) => h.id === id) || null;
   }
 
-  public async createHabit(habit: Habit): Promise<Habit> {
+  public async createHabit(habit: Habit): Promise<{ habit: Habit; synced: boolean; error?: string }> {
     const habits = getLocalCache<Habit[]>(STORAGE_KEYS.HABITS, DEFAULT_HABITS);
     const updated = [...habits.filter((h) => h.id !== habit.id), habit];
     setLocalCache(STORAGE_KEYS.HABITS, updated);
 
-    const payload = this.mapHabitToDb(habit);
-
     if (navigator.onLine && isSupabaseConfigured()) {
+      const userId = await this.getAuthenticatedUserId();
+      if (!userId) {
+        const payload = this.mapHabitToDb(habit);
+        this.enqueuePending({ id: habit.id, table: 'habits', action: 'INSERT', payload });
+        this.setSyncState('offline');
+        return { habit, synced: false, error: 'No active session' };
+      }
+
+      const payload = this.mapHabitToDb(habit, userId);
       try {
         this.setSyncState('syncing');
-        const { error } = await supabase.from('habits').insert(payload);
-        if (error) {
-          console.warn('Supabase createHabit error, queueing pending sync:', error);
-          this.enqueuePending({ id: habit.id, table: 'habits', action: 'INSERT', payload });
+        const { data, error } = await supabase.from('habits').insert(payload).select().single();
+        if (error || !data) {
+          const errMsg = error?.message || 'Row verification failed (no data returned)';
+          console.warn('Supabase createHabit error, queueing pending sync:', errMsg);
+          this.enqueuePending({ id: habit.id, table: 'habits', action: 'INSERT', payload, userId });
           this.setSyncState('error');
+          return { habit, synced: false, error: errMsg };
         } else {
           this.setSyncState('synced');
+          return { habit, synced: true };
         }
-      } catch (err) {
-        this.enqueuePending({ id: habit.id, table: 'habits', action: 'INSERT', payload });
+      } catch (err: any) {
+        this.enqueuePending({ id: habit.id, table: 'habits', action: 'INSERT', payload, userId });
         this.setSyncState('error');
+        return { habit, synced: false, error: err.message || 'Network error' };
       }
     } else {
+      const payload = this.mapHabitToDb(habit);
       this.enqueuePending({ id: habit.id, table: 'habits', action: 'INSERT', payload });
       this.setSyncState('offline');
+      return { habit, synced: false };
     }
-
-    return habit;
   }
 
-  public async updateHabit(id: string, updates: Partial<Habit>): Promise<Habit | null> {
+  public async updateHabit(id: string, updates: Partial<Habit>): Promise<{ habit: Habit | null; synced: boolean; error?: string }> {
     const habits = getLocalCache<Habit[]>(STORAGE_KEYS.HABITS, DEFAULT_HABITS);
     const existing = habits.find((h) => h.id === id);
-    if (!existing) return null;
+    if (!existing) return { habit: null, synced: false, error: 'Habit not found' };
 
     const updatedHabit: Habit = {
       ...existing,
@@ -378,55 +427,76 @@ class HabitService {
     const newList = habits.map((h) => (h.id === id ? updatedHabit : h));
     setLocalCache(STORAGE_KEYS.HABITS, newList);
 
-    const payload = this.mapHabitToDb(updatedHabit);
-
     if (navigator.onLine && isSupabaseConfigured()) {
+      const userId = await this.getAuthenticatedUserId();
+      if (!userId) {
+        const payload = this.mapHabitToDb(updatedHabit);
+        this.enqueuePending({ id, table: 'habits', action: 'UPDATE', payload });
+        this.setSyncState('offline');
+        return { habit: updatedHabit, synced: false, error: 'No active session' };
+      }
+
+      const payload = this.mapHabitToDb(updatedHabit, userId);
       try {
         this.setSyncState('syncing');
-        const { error } = await supabase.from('habits').update(payload).eq('id', id);
-        if (error) {
-          this.enqueuePending({ id, table: 'habits', action: 'UPDATE', payload });
+        const { data, error } = await supabase.from('habits').upsert(payload).select().single();
+        if (error || !data) {
+          const errMsg = error?.message || 'Row verification failed (no data returned)';
+          console.warn('Supabase updateHabit error:', errMsg);
+          this.enqueuePending({ id, table: 'habits', action: 'UPDATE', payload, userId });
           this.setSyncState('error');
+          return { habit: updatedHabit, synced: false, error: errMsg };
         } else {
           this.setSyncState('synced');
+          return { habit: updatedHabit, synced: true };
         }
-      } catch (err) {
-        this.enqueuePending({ id, table: 'habits', action: 'UPDATE', payload });
+      } catch (err: any) {
+        this.enqueuePending({ id, table: 'habits', action: 'UPDATE', payload, userId });
         this.setSyncState('error');
+        return { habit: updatedHabit, synced: false, error: err.message || 'Network error' };
       }
     } else {
+      const payload = this.mapHabitToDb(updatedHabit);
       this.enqueuePending({ id, table: 'habits', action: 'UPDATE', payload });
       this.setSyncState('offline');
+      return { habit: updatedHabit, synced: false };
     }
-
-    return updatedHabit;
   }
 
-  public async deleteHabit(id: string): Promise<boolean> {
+  public async deleteHabit(id: string): Promise<{ success: boolean; synced: boolean; error?: string }> {
     const habits = getLocalCache<Habit[]>(STORAGE_KEYS.HABITS, DEFAULT_HABITS);
     const filtered = habits.filter((h) => h.id !== id);
     setLocalCache(STORAGE_KEYS.HABITS, filtered);
 
     if (navigator.onLine && isSupabaseConfigured()) {
+      const userId = await this.getAuthenticatedUserId();
+      if (!userId) {
+        this.enqueuePending({ id, table: 'habits', action: 'DELETE', payload: null });
+        this.setSyncState('offline');
+        return { success: true, synced: false, error: 'No active session' };
+      }
+
       try {
         this.setSyncState('syncing');
         const { error } = await supabase.from('habits').delete().eq('id', id);
         if (error) {
-          this.enqueuePending({ id, table: 'habits', action: 'DELETE', payload: null });
+          this.enqueuePending({ id, table: 'habits', action: 'DELETE', payload: null, userId });
           this.setSyncState('error');
+          return { success: true, synced: false, error: error.message };
         } else {
           this.setSyncState('synced');
+          return { success: true, synced: true };
         }
-      } catch (err) {
-        this.enqueuePending({ id, table: 'habits', action: 'DELETE', payload: null });
+      } catch (err: any) {
+        this.enqueuePending({ id, table: 'habits', action: 'DELETE', payload: null, userId });
         this.setSyncState('error');
+        return { success: true, synced: false, error: err.message || 'Network error' };
       }
     } else {
       this.enqueuePending({ id, table: 'habits', action: 'DELETE', payload: null });
       this.setSyncState('offline');
+      return { success: true, synced: false };
     }
-
-    return true;
   }
 
   // ==========================================
@@ -471,39 +541,51 @@ class HabitService {
     return all.filter((l) => l.dailyTrackerId === dateStr || l.dailyTrackerId === `tracker-${dateStr}` || l.dailyTrackerId.includes(dateStr));
   }
 
-  public async createCompletion(completion: HabitLog): Promise<HabitLog> {
+  public async createCompletion(completion: HabitLog): Promise<{ completion: HabitLog; synced: boolean; error?: string }> {
     const completions = getLocalCache<HabitLog[]>(STORAGE_KEYS.COMPLETIONS, []);
     const updated = [...completions.filter((c) => c.id !== completion.id), completion];
     setLocalCache(STORAGE_KEYS.COMPLETIONS, updated);
 
-    const payload = this.mapCompletionToDb(completion);
-
     if (navigator.onLine && isSupabaseConfigured()) {
+      const userId = await this.getAuthenticatedUserId();
+      if (!userId) {
+        const payload = this.mapCompletionToDb(completion);
+        this.enqueuePending({ id: completion.id, table: 'habit_completions', action: 'INSERT', payload });
+        this.setSyncState('offline');
+        return { completion, synced: false, error: 'No active session' };
+      }
+
+      const payload = this.mapCompletionToDb(completion, userId);
       try {
         this.setSyncState('syncing');
-        const { error } = await supabase.from('habit_completions').insert(payload);
-        if (error) {
-          this.enqueuePending({ id: completion.id, table: 'habit_completions', action: 'INSERT', payload });
+        const { data, error } = await supabase.from('habit_completions').insert(payload).select().single();
+        if (error || !data) {
+          const errMsg = error?.message || 'Row verification failed (no data returned)';
+          console.warn('Supabase createCompletion error:', errMsg);
+          this.enqueuePending({ id: completion.id, table: 'habit_completions', action: 'INSERT', payload, userId });
           this.setSyncState('error');
+          return { completion, synced: false, error: errMsg };
         } else {
           this.setSyncState('synced');
+          return { completion, synced: true };
         }
-      } catch (err) {
-        this.enqueuePending({ id: completion.id, table: 'habit_completions', action: 'INSERT', payload });
+      } catch (err: any) {
+        this.enqueuePending({ id: completion.id, table: 'habit_completions', action: 'INSERT', payload, userId });
         this.setSyncState('error');
+        return { completion, synced: false, error: err.message || 'Network error' };
       }
     } else {
+      const payload = this.mapCompletionToDb(completion);
       this.enqueuePending({ id: completion.id, table: 'habit_completions', action: 'INSERT', payload });
       this.setSyncState('offline');
+      return { completion, synced: false };
     }
-
-    return completion;
   }
 
-  public async updateCompletion(id: string, updates: Partial<HabitLog>): Promise<HabitLog | null> {
+  public async updateCompletion(id: string, updates: Partial<HabitLog>): Promise<{ completion: HabitLog | null; synced: boolean; error?: string }> {
     const completions = getLocalCache<HabitLog[]>(STORAGE_KEYS.COMPLETIONS, []);
     const existing = completions.find((c) => c.id === id);
-    if (!existing) return null;
+    if (!existing) return { completion: null, synced: false, error: 'Completion log not found' };
 
     const updatedLog: HabitLog = {
       ...existing,
@@ -514,55 +596,76 @@ class HabitService {
     const newList = completions.map((c) => (c.id === id ? updatedLog : c));
     setLocalCache(STORAGE_KEYS.COMPLETIONS, newList);
 
-    const payload = this.mapCompletionToDb(updatedLog);
-
     if (navigator.onLine && isSupabaseConfigured()) {
+      const userId = await this.getAuthenticatedUserId();
+      if (!userId) {
+        const payload = this.mapCompletionToDb(updatedLog);
+        this.enqueuePending({ id, table: 'habit_completions', action: 'UPDATE', payload });
+        this.setSyncState('offline');
+        return { completion: updatedLog, synced: false, error: 'No active session' };
+      }
+
+      const payload = this.mapCompletionToDb(updatedLog, userId);
       try {
         this.setSyncState('syncing');
-        const { error } = await supabase.from('habit_completions').upsert(payload);
-        if (error) {
-          this.enqueuePending({ id, table: 'habit_completions', action: 'UPDATE', payload });
+        const { data, error } = await supabase.from('habit_completions').upsert(payload).select().single();
+        if (error || !data) {
+          const errMsg = error?.message || 'Row verification failed (no data returned)';
+          console.warn('Supabase updateCompletion error:', errMsg);
+          this.enqueuePending({ id, table: 'habit_completions', action: 'UPDATE', payload, userId });
           this.setSyncState('error');
+          return { completion: updatedLog, synced: false, error: errMsg };
         } else {
           this.setSyncState('synced');
+          return { completion: updatedLog, synced: true };
         }
-      } catch (err) {
-        this.enqueuePending({ id, table: 'habit_completions', action: 'UPDATE', payload });
+      } catch (err: any) {
+        this.enqueuePending({ id, table: 'habit_completions', action: 'UPDATE', payload, userId });
         this.setSyncState('error');
+        return { completion: updatedLog, synced: false, error: err.message || 'Network error' };
       }
     } else {
+      const payload = this.mapCompletionToDb(updatedLog);
       this.enqueuePending({ id, table: 'habit_completions', action: 'UPDATE', payload });
       this.setSyncState('offline');
+      return { completion: updatedLog, synced: false };
     }
-
-    return updatedLog;
   }
 
-  public async deleteCompletion(id: string): Promise<boolean> {
+  public async deleteCompletion(id: string): Promise<{ success: boolean; synced: boolean; error?: string }> {
     const completions = getLocalCache<HabitLog[]>(STORAGE_KEYS.COMPLETIONS, []);
     const filtered = completions.filter((c) => c.id !== id);
     setLocalCache(STORAGE_KEYS.COMPLETIONS, filtered);
 
     if (navigator.onLine && isSupabaseConfigured()) {
+      const userId = await this.getAuthenticatedUserId();
+      if (!userId) {
+        this.enqueuePending({ id, table: 'habit_completions', action: 'DELETE', payload: null });
+        this.setSyncState('offline');
+        return { success: true, synced: false, error: 'No active session' };
+      }
+
       try {
         this.setSyncState('syncing');
         const { error } = await supabase.from('habit_completions').delete().eq('id', id);
         if (error) {
-          this.enqueuePending({ id, table: 'habit_completions', action: 'DELETE', payload: null });
+          this.enqueuePending({ id, table: 'habit_completions', action: 'DELETE', payload: null, userId });
           this.setSyncState('error');
+          return { success: true, synced: false, error: error.message };
         } else {
           this.setSyncState('synced');
+          return { success: true, synced: true };
         }
-      } catch (err) {
-        this.enqueuePending({ id, table: 'habit_completions', action: 'DELETE', payload: null });
+      } catch (err: any) {
+        this.enqueuePending({ id, table: 'habit_completions', action: 'DELETE', payload: null, userId });
         this.setSyncState('error');
+        return { success: true, synced: false, error: err.message || 'Network error' };
       }
     } else {
       this.enqueuePending({ id, table: 'habit_completions', action: 'DELETE', payload: null });
       this.setSyncState('offline');
+      return { success: true, synced: false };
     }
-
-    return true;
   }
 
   // ==========================================
@@ -591,39 +694,51 @@ class HabitService {
     return active;
   }
 
-  public async createChallengeProgress(data: Challenge): Promise<Challenge> {
+  public async createChallengeProgress(data: Challenge): Promise<{ challenge: Challenge; synced: boolean; error?: string }> {
     const list = getLocalCache<Challenge[]>(STORAGE_KEYS.CHALLENGE, []);
     const updated = [...list.filter((c) => c.id !== data.id), data];
     setLocalCache(STORAGE_KEYS.CHALLENGE, updated);
 
-    const payload = this.mapChallengeToDb(data);
-
     if (navigator.onLine && isSupabaseConfigured()) {
+      const userId = await this.getAuthenticatedUserId();
+      if (!userId) {
+        const payload = this.mapChallengeToDb(data);
+        this.enqueuePending({ id: data.id, table: 'challenge_progress', action: 'INSERT', payload });
+        this.setSyncState('offline');
+        return { challenge: data, synced: false, error: 'No active session' };
+      }
+
+      const payload = this.mapChallengeToDb(data, userId);
       try {
         this.setSyncState('syncing');
-        const { error } = await supabase.from('challenge_progress').insert(payload);
-        if (error) {
-          this.enqueuePending({ id: data.id, table: 'challenge_progress', action: 'INSERT', payload });
+        const { data: resData, error } = await supabase.from('challenge_progress').insert(payload).select().single();
+        if (error || !resData) {
+          const errMsg = error?.message || 'Row verification failed (no data returned)';
+          console.warn('Supabase createChallengeProgress error:', errMsg);
+          this.enqueuePending({ id: data.id, table: 'challenge_progress', action: 'INSERT', payload, userId });
           this.setSyncState('error');
+          return { challenge: data, synced: false, error: errMsg };
         } else {
           this.setSyncState('synced');
+          return { challenge: data, synced: true };
         }
-      } catch (err) {
-        this.enqueuePending({ id: data.id, table: 'challenge_progress', action: 'INSERT', payload });
+      } catch (err: any) {
+        this.enqueuePending({ id: data.id, table: 'challenge_progress', action: 'INSERT', payload, userId });
         this.setSyncState('error');
+        return { challenge: data, synced: false, error: err.message || 'Network error' };
       }
     } else {
+      const payload = this.mapChallengeToDb(data);
       this.enqueuePending({ id: data.id, table: 'challenge_progress', action: 'INSERT', payload });
       this.setSyncState('offline');
+      return { challenge: data, synced: false };
     }
-
-    return data;
   }
 
-  public async updateChallengeProgress(id: string, updates: Partial<Challenge>): Promise<Challenge | null> {
+  public async updateChallengeProgress(id: string, updates: Partial<Challenge>): Promise<{ challenge: Challenge | null; synced: boolean; error?: string }> {
     const list = getLocalCache<Challenge[]>(STORAGE_KEYS.CHALLENGE, []);
     const existing = list.find((c) => c.id === id);
-    if (!existing) return null;
+    if (!existing) return { challenge: null, synced: false, error: 'Challenge not found' };
 
     const updatedChallenge: Challenge = {
       ...existing,
@@ -634,29 +749,42 @@ class HabitService {
     const newList = list.map((c) => (c.id === id ? updatedChallenge : c));
     setLocalCache(STORAGE_KEYS.CHALLENGE, newList);
 
-    const payload = this.mapChallengeToDb(updatedChallenge);
-
     if (navigator.onLine && isSupabaseConfigured()) {
+      const userId = await this.getAuthenticatedUserId();
+      if (!userId) {
+        const payload = this.mapChallengeToDb(updatedChallenge);
+        this.enqueuePending({ id, table: 'challenge_progress', action: 'UPDATE', payload });
+        this.setSyncState('offline');
+        return { challenge: updatedChallenge, synced: false, error: 'No active session' };
+      }
+
+      const payload = this.mapChallengeToDb(updatedChallenge, userId);
       try {
         this.setSyncState('syncing');
-        const { error } = await supabase.from('challenge_progress').upsert(payload);
-        if (error) {
-          this.enqueuePending({ id, table: 'challenge_progress', action: 'UPDATE', payload });
+        const { data: resData, error } = await supabase.from('challenge_progress').upsert(payload).select().single();
+        if (error || !resData) {
+          const errMsg = error?.message || 'Row verification failed (no data returned)';
+          console.warn('Supabase updateChallengeProgress error:', errMsg);
+          this.enqueuePending({ id, table: 'challenge_progress', action: 'UPDATE', payload, userId });
           this.setSyncState('error');
+          return { challenge: updatedChallenge, synced: false, error: errMsg };
         } else {
           this.setSyncState('synced');
+          return { challenge: updatedChallenge, synced: true };
         }
-      } catch (err) {
-        this.enqueuePending({ id, table: 'challenge_progress', action: 'UPDATE', payload });
+      } catch (err: any) {
+        this.enqueuePending({ id, table: 'challenge_progress', action: 'UPDATE', payload, userId });
         this.setSyncState('error');
+        return { challenge: updatedChallenge, synced: false, error: err.message || 'Network error' };
       }
     } else {
+      const payload = this.mapChallengeToDb(updatedChallenge);
       this.enqueuePending({ id, table: 'challenge_progress', action: 'UPDATE', payload });
       this.setSyncState('offline');
+      return { challenge: updatedChallenge, synced: false };
     }
-
-    return updatedChallenge;
   }
+
   // ==========================================
   // 4. TASKS CRUD
   // ==========================================
@@ -686,40 +814,51 @@ class HabitService {
     return tasks.find((t) => t.id === id) || null;
   }
 
-  public async createTask(task: TaskItem): Promise<TaskItem> {
+  public async createTask(task: TaskItem): Promise<{ task: TaskItem; synced: boolean; error?: string }> {
     const tasks = getLocalCache<TaskItem[]>(STORAGE_KEYS.TASKS, []);
     const updated = [...tasks.filter((t) => t.id !== task.id), task];
     setLocalCache(STORAGE_KEYS.TASKS, updated);
 
-    const payload = this.mapTaskToDb(task);
-
     if (navigator.onLine && isSupabaseConfigured()) {
+      const userId = await this.getAuthenticatedUserId();
+      if (!userId) {
+        const payload = this.mapTaskToDb(task);
+        this.enqueuePending({ id: task.id, table: 'tasks', action: 'INSERT', payload });
+        this.setSyncState('offline');
+        return { task, synced: false, error: 'No active session' };
+      }
+
+      const payload = this.mapTaskToDb(task, userId);
       try {
         this.setSyncState('syncing');
-        const { error } = await supabase.from('tasks').insert(payload);
-        if (error) {
-          console.warn('Supabase createTask error, queueing pending sync:', error);
-          this.enqueuePending({ id: task.id, table: 'tasks', action: 'INSERT', payload });
+        const { data: resData, error } = await supabase.from('tasks').insert(payload).select().single();
+        if (error || !resData) {
+          const errMsg = error?.message || 'Row verification failed (no data returned)';
+          console.warn('Supabase createTask error, queueing pending sync:', errMsg);
+          this.enqueuePending({ id: task.id, table: 'tasks', action: 'INSERT', payload, userId });
           this.setSyncState('error');
+          return { task, synced: false, error: errMsg };
         } else {
           this.setSyncState('synced');
+          return { task, synced: true };
         }
-      } catch (err) {
-        this.enqueuePending({ id: task.id, table: 'tasks', action: 'INSERT', payload });
+      } catch (err: any) {
+        this.enqueuePending({ id: task.id, table: 'tasks', action: 'INSERT', payload, userId });
         this.setSyncState('error');
+        return { task, synced: false, error: err.message || 'Network error' };
       }
     } else {
+      const payload = this.mapTaskToDb(task);
       this.enqueuePending({ id: task.id, table: 'tasks', action: 'INSERT', payload });
       this.setSyncState('offline');
+      return { task, synced: false };
     }
-
-    return task;
   }
 
-  public async updateTask(id: string, updates: Partial<TaskItem>): Promise<TaskItem | null> {
+  public async updateTask(id: string, updates: Partial<TaskItem>): Promise<{ task: TaskItem | null; synced: boolean; error?: string }> {
     const tasks = getLocalCache<TaskItem[]>(STORAGE_KEYS.TASKS, []);
     const existing = tasks.find((t) => t.id === id);
-    if (!existing) return null;
+    if (!existing) return { task: null, synced: false, error: 'Task not found' };
 
     const updatedTask: TaskItem = {
       ...existing,
@@ -730,55 +869,76 @@ class HabitService {
     const newList = tasks.map((t) => (t.id === id ? updatedTask : t));
     setLocalCache(STORAGE_KEYS.TASKS, newList);
 
-    const payload = this.mapTaskToDb(updatedTask);
-
     if (navigator.onLine && isSupabaseConfigured()) {
+      const userId = await this.getAuthenticatedUserId();
+      if (!userId) {
+        const payload = this.mapTaskToDb(updatedTask);
+        this.enqueuePending({ id, table: 'tasks', action: 'UPDATE', payload });
+        this.setSyncState('offline');
+        return { task: updatedTask, synced: false, error: 'No active session' };
+      }
+
+      const payload = this.mapTaskToDb(updatedTask, userId);
       try {
         this.setSyncState('syncing');
-        const { error } = await supabase.from('tasks').upsert(payload);
-        if (error) {
-          this.enqueuePending({ id, table: 'tasks', action: 'UPDATE', payload });
+        const { data: resData, error } = await supabase.from('tasks').upsert(payload).select().single();
+        if (error || !resData) {
+          const errMsg = error?.message || 'Row verification failed (no data returned)';
+          console.warn('Supabase updateTask error:', errMsg);
+          this.enqueuePending({ id, table: 'tasks', action: 'UPDATE', payload, userId });
           this.setSyncState('error');
+          return { task: updatedTask, synced: false, error: errMsg };
         } else {
           this.setSyncState('synced');
+          return { task: updatedTask, synced: true };
         }
-      } catch (err) {
-        this.enqueuePending({ id, table: 'tasks', action: 'UPDATE', payload });
+      } catch (err: any) {
+        this.enqueuePending({ id, table: 'tasks', action: 'UPDATE', payload, userId });
         this.setSyncState('error');
+        return { task: updatedTask, synced: false, error: err.message || 'Network error' };
       }
     } else {
+      const payload = this.mapTaskToDb(updatedTask);
       this.enqueuePending({ id, table: 'tasks', action: 'UPDATE', payload });
       this.setSyncState('offline');
+      return { task: updatedTask, synced: false };
     }
-
-    return updatedTask;
   }
 
-  public async deleteTask(id: string): Promise<boolean> {
+  public async deleteTask(id: string): Promise<{ success: boolean; synced: boolean; error?: string }> {
     const tasks = getLocalCache<TaskItem[]>(STORAGE_KEYS.TASKS, []);
     const filtered = tasks.filter((t) => t.id !== id);
     setLocalCache(STORAGE_KEYS.TASKS, filtered);
 
     if (navigator.onLine && isSupabaseConfigured()) {
+      const userId = await this.getAuthenticatedUserId();
+      if (!userId) {
+        this.enqueuePending({ id, table: 'tasks', action: 'DELETE', payload: null });
+        this.setSyncState('offline');
+        return { success: true, synced: false, error: 'No active session' };
+      }
+
       try {
         this.setSyncState('syncing');
         const { error } = await supabase.from('tasks').delete().eq('id', id);
         if (error) {
-          this.enqueuePending({ id, table: 'tasks', action: 'DELETE', payload: null });
+          this.enqueuePending({ id, table: 'tasks', action: 'DELETE', payload: null, userId });
           this.setSyncState('error');
+          return { success: true, synced: false, error: error.message };
         } else {
           this.setSyncState('synced');
+          return { success: true, synced: true };
         }
-      } catch (err) {
-        this.enqueuePending({ id, table: 'tasks', action: 'DELETE', payload: null });
+      } catch (err: any) {
+        this.enqueuePending({ id, table: 'tasks', action: 'DELETE', payload: null, userId });
         this.setSyncState('error');
+        return { success: true, synced: false, error: err.message || 'Network error' };
       }
     } else {
       this.enqueuePending({ id, table: 'tasks', action: 'DELETE', payload: null });
       this.setSyncState('offline');
+      return { success: true, synced: false };
     }
-
-    return true;
   }
 
   public clearCache(): void {

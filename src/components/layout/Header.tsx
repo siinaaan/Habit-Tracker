@@ -16,7 +16,7 @@ export const Header: React.FC = () => {
     updateSettings,
     setActiveTab,
     resetToNewChallenge,
-    setIsAddTaskModalOpen,
+    setIsAddHabitModalOpen,
   } = useApp();
 
   const { user, signOut } = useAuth();
@@ -73,14 +73,14 @@ export const Header: React.FC = () => {
 
         {/* Right Actions */}
         <div className="flex items-center gap-2 shrink-0">
-          {/* Add Task Button (Desktop: + Add Task, Mobile: +) */}
+          {/* Add Habit Button (Desktop: + Add Habit, Mobile: +) */}
           <Button
             size="sm"
             variant="primary"
-            onClick={() => setIsAddTaskModalOpen(true)}
+            onClick={() => setIsAddHabitModalOpen(true)}
             icon={<Plus className="w-4 h-4" />}
           >
-            <span className="hidden sm:inline">Add Task</span>
+            <span className="hidden sm:inline">Add Habit</span>
           </Button>
 
           {/* Sync Status Badge */}

@@ -1,10 +1,25 @@
--- Supabase Database Migration Schema
--- Includes tables for: habits, habit_completions, challenge_progress, tasks
--- Run this script in your Supabase SQL Editor if tables do not exist yet.
+-- ====================================================================
+-- SUPABASE COMPLETE DATABASE REPLACEMENT & USER OWNERSHIP MIGRATION
+-- Target Tables: public.habits, public.habit_completions, public.challenge_progress, public.tasks
+-- Run this script in the Supabase SQL Editor.
+-- ====================================================================
+
+-- --------------------------------------------------------------------
+-- STEP 1: SAFELY DROP EMPTY LEGACY TABLES (IF THEY EXIST)
+-- --------------------------------------------------------------------
+DROP TABLE IF EXISTS public.habit_completions CASCADE;
+DROP TABLE IF EXISTS public.tasks CASCADE;
+DROP TABLE IF EXISTS public.habits CASCADE;
+DROP TABLE IF EXISTS public.challenge_progress CASCADE;
+
+-- --------------------------------------------------------------------
+-- STEP 2: CREATE MODERN TABLES MATCHING REACT APP EXPECTATIONS
+-- --------------------------------------------------------------------
 
 -- 1. HABITS TABLE
-CREATE TABLE IF NOT EXISTS public.habits (
+CREATE TABLE public.habits (
     id TEXT PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE DEFAULT auth.uid(),
     name TEXT NOT NULL,
     description TEXT,
     category TEXT DEFAULT 'Custom',
@@ -19,20 +34,11 @@ CREATE TABLE IF NOT EXISTS public.habits (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-ALTER TABLE public.habits ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Allow public full access to habits" ON public.habits;
-CREATE POLICY "Allow public full access to habits"
-ON public.habits
-FOR ALL
-USING (true)
-WITH CHECK (true);
-
-
 -- 2. HABIT COMPLETIONS TABLE
-CREATE TABLE IF NOT EXISTS public.habit_completions (
+CREATE TABLE public.habit_completions (
     id TEXT PRIMARY KEY,
-    habit_id TEXT NOT NULL,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE DEFAULT auth.uid(),
+    habit_id TEXT NOT NULL REFERENCES public.habits(id) ON DELETE CASCADE,
     daily_tracker_id TEXT NOT NULL,
     completed BOOLEAN DEFAULT FALSE,
     numeric_value NUMERIC,
@@ -43,19 +49,10 @@ CREATE TABLE IF NOT EXISTS public.habit_completions (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-ALTER TABLE public.habit_completions ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Allow public full access to habit_completions" ON public.habit_completions;
-CREATE POLICY "Allow public full access to habit_completions"
-ON public.habit_completions
-FOR ALL
-USING (true)
-WITH CHECK (true);
-
-
 -- 3. CHALLENGE PROGRESS TABLE
-CREATE TABLE IF NOT EXISTS public.challenge_progress (
+CREATE TABLE public.challenge_progress (
     id TEXT PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE DEFAULT auth.uid(),
     name TEXT NOT NULL,
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
@@ -65,19 +62,10 @@ CREATE TABLE IF NOT EXISTS public.challenge_progress (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-ALTER TABLE public.challenge_progress ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Allow public full access to challenge_progress" ON public.challenge_progress;
-CREATE POLICY "Allow public full access to challenge_progress"
-ON public.challenge_progress
-FOR ALL
-USING (true)
-WITH CHECK (true);
-
-
 -- 4. TASKS TABLE
-CREATE TABLE IF NOT EXISTS public.tasks (
+CREATE TABLE public.tasks (
     id TEXT PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE DEFAULT auth.uid(),
     title TEXT NOT NULL,
     description TEXT,
     category TEXT DEFAULT 'General',
@@ -85,17 +73,65 @@ CREATE TABLE IF NOT EXISTS public.tasks (
     due_date DATE,
     due_time TIME,
     repeat_type TEXT DEFAULT 'None',
-    habit_id TEXT,
+    habit_id TEXT REFERENCES public.habits(id) ON DELETE SET NULL,
     completed BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- --------------------------------------------------------------------
+-- STEP 3: CREATE PERFORMANCE INDEXES
+-- --------------------------------------------------------------------
+CREATE INDEX idx_habits_user_id ON public.habits(user_id);
+CREATE INDEX idx_habit_completions_user_id ON public.habit_completions(user_id);
+CREATE INDEX idx_habit_completions_habit_id ON public.habit_completions(habit_id);
+CREATE INDEX idx_habit_completions_tracker_id ON public.habit_completions(daily_tracker_id);
+
+CREATE INDEX idx_challenge_progress_user_id ON public.challenge_progress(user_id);
+CREATE INDEX idx_tasks_user_id ON public.tasks(user_id);
+CREATE INDEX idx_tasks_habit_id ON public.tasks(habit_id);
+CREATE INDEX idx_tasks_due_date ON public.tasks(due_date);
+
+-- --------------------------------------------------------------------
+-- STEP 4: ENABLE ROW LEVEL SECURITY (RLS)
+-- --------------------------------------------------------------------
+ALTER TABLE public.habits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.habit_completions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.challenge_progress ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "Allow public full access to tasks" ON public.tasks;
-CREATE POLICY "Allow public full access to tasks"
+-- --------------------------------------------------------------------
+-- STEP 5: CREATE PER-USER RLS POLICIES (TO AUTHENTICATED USERS)
+-- --------------------------------------------------------------------
+
+-- 1. habits RLS
+CREATE POLICY "Users can manage their own habits"
+ON public.habits
+FOR ALL
+TO authenticated
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
+
+-- 2. habit_completions RLS
+CREATE POLICY "Users can manage their own habit completions"
+ON public.habit_completions
+FOR ALL
+TO authenticated
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
+
+-- 3. challenge_progress RLS
+CREATE POLICY "Users can manage their own challenge progress"
+ON public.challenge_progress
+FOR ALL
+TO authenticated
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
+
+-- 4. tasks RLS
+CREATE POLICY "Users can manage their own tasks"
 ON public.tasks
 FOR ALL
-USING (true)
-WITH CHECK (true);
+TO authenticated
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);

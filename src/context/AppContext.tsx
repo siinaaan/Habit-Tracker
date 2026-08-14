@@ -40,9 +40,14 @@ interface AppContextType {
   tasks: TaskItem[];
   settings: AppSettings;
 
-  // Add Task Modal State
+  // Add Task & Add Habit Modal State
   isAddTaskModalOpen: boolean;
   setIsAddTaskModalOpen: (open: boolean) => void;
+  isAddHabitModalOpen: boolean;
+  setIsAddHabitModalOpen: (open: boolean) => void;
+  editingHabit: Habit | null;
+  setEditingHabit: (habit: Habit | null) => void;
+  openAddHabitModal: (habit?: Habit | null) => void;
 
   // Active Day Number
   currentDayNumber: number;
@@ -107,8 +112,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [tasks, setTasksState] = useState<TaskItem[]>([]);
   const [settings, setSettingsState] = useState<AppSettings>(StorageService.getSettings());
 
-  // Add Task Modal State
+  // Add Task & Add Habit Modal State
   const [isAddTaskModalOpen, setIsAddTaskModalOpen] = useState<boolean>(false);
+  const [isAddHabitModalOpen, setIsAddHabitModalOpen] = useState<boolean>(false);
+  const [editingHabit, setEditingHabit] = useState<Habit | null>(null);
+
+  const openAddHabitModal = (habit?: Habit | null) => {
+    setEditingHabit(habit || null);
+    setIsAddHabitModalOpen(true);
+  };
 
   // Toasts
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -199,14 +211,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const saveHabit = async (habit: Habit) => {
     StorageService.saveHabit(habit);
     const existing = habits.find((h) => h.id === habit.id);
+    let res: { synced: boolean; error?: string };
     if (existing) {
-      await habitService.updateHabit(habit.id, habit);
+      res = await habitService.updateHabit(habit.id, habit);
     } else {
-      await habitService.createHabit(habit);
+      res = await habitService.createHabit(habit);
     }
     const updatedList = await habitService.getHabits();
     setHabitsState(updatedList);
-    showToast(`Habit "${habit.name}" saved!`, 'success');
+
+    if (res.synced) {
+      showToast(`Habit "${habit.name}" saved & synced!`, 'success');
+    } else if (res.error) {
+      showToast(`Habit "${habit.name}" saved locally (Cloud error: ${res.error})`, 'warning');
+    } else {
+      showToast(`Habit "${habit.name}" saved locally (offline)`, 'info');
+    }
   };
 
   const saveHabitsOrder = (newHabits: Habit[]) => {
@@ -344,14 +364,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const saveTask = async (task: TaskItem) => {
     StorageService.saveTask(task);
     const existing = tasks.find((t) => t.id === task.id);
+    let res: { synced: boolean; error?: string };
     if (existing) {
-      await habitService.updateTask(task.id, task);
+      res = await habitService.updateTask(task.id, task);
     } else {
-      await habitService.createTask(task);
+      res = await habitService.createTask(task);
     }
     const updatedTasks = await habitService.getTasks();
     setTasksState(updatedTasks);
-    showToast(`Task "${task.title}" saved!`, 'success');
+
+    if (res.synced) {
+      showToast(`Task "${task.title}" saved & synced!`, 'success');
+    } else if (res.error) {
+      showToast(`Task "${task.title}" saved locally (Cloud error: ${res.error})`, 'warning');
+    } else {
+      showToast(`Task "${task.title}" saved locally (offline)`, 'info');
+    }
   };
 
   const deleteTask = async (id: string) => {
@@ -368,12 +396,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newStatus = !task.completed;
     const updated = { ...task, completed: newStatus, updatedDate: new Date().toISOString() };
     StorageService.saveTask(updated);
-    await habitService.updateTask(id, { completed: newStatus });
+    const res = await habitService.updateTask(id, { completed: newStatus });
     const updatedTasks = await habitService.getTasks();
     setTasksState(updatedTasks);
     if (newStatus) {
       triggerConfetti();
-      showToast(`Task "${task.title}" completed!`, 'success');
+      if (res.synced) {
+        showToast(`Task "${task.title}" completed & synced!`, 'success');
+      } else if (res.error) {
+        showToast(`Task completed locally (Cloud error: ${res.error})`, 'warning');
+      } else {
+        showToast(`Task "${task.title}" completed locally!`, 'info');
+      }
     }
   };
 
@@ -440,6 +474,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         settings,
         isAddTaskModalOpen,
         setIsAddTaskModalOpen,
+        isAddHabitModalOpen,
+        setIsAddHabitModalOpen,
+        editingHabit,
+        setEditingHabit,
+        openAddHabitModal,
         currentDayNumber,
         selectedDayTracker,
         selectedDayLogs,

@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { Habit, HabitLog } from '../../types';
-import { Check, Clock, Hash, CheckSquare } from 'lucide-react';
+import { useApp } from '../../context/AppContext';
+import { ConfirmationDialog } from '../ui/ConfirmationDialog';
+import { Check, Clock, Hash, CheckSquare, Edit2, Trash2 } from 'lucide-react';
 import { clsx } from 'clsx';
 
 interface HabitCardProps {
@@ -14,6 +16,8 @@ export const HabitCard: React.FC<HabitCardProps> = ({
   log,
   onUpdateLog,
 }) => {
+  const { openAddHabitModal, deleteHabit } = useApp();
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
   const isCompleted = log?.completed || false;
 
   const handleCheckboxToggle = () => {
@@ -205,7 +209,37 @@ export const HabitCard: React.FC<HabitCardProps> = ({
             </button>
           </div>
         )}
+
+        {/* Edit & Delete Action Buttons */}
+        <div className="flex items-center gap-1 border-l border-slate-800/80 pl-2">
+          <button
+            onClick={() => openAddHabitModal(habit)}
+            className="p-2 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 cursor-pointer transition-colors"
+            title="Edit habit"
+            aria-label="Edit habit"
+          >
+            <Edit2 className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => setIsConfirmDeleteOpen(true)}
+            className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 cursor-pointer transition-colors"
+            title="Delete habit"
+            aria-label="Delete habit"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmationDialog
+        isOpen={isConfirmDeleteOpen}
+        onClose={() => setIsConfirmDeleteOpen(false)}
+        onConfirm={() => deleteHabit(habit.id)}
+        title="Delete Habit"
+        message={`Are you sure you want to delete "${habit.name}"?`}
+        confirmText="Delete Habit"
+      />
     </div>
   );
 };

@@ -3,7 +3,8 @@ import { useApp } from '../context/AppContext';
 import { HabitCard } from '../components/habits/HabitCard';
 import { Card, CardTitle } from '../components/ui/Card';
 import { ProgressBar } from '../components/ui/ProgressBar';
-import { Calendar, ChevronLeft, ChevronRight, CheckCircle2 } from 'lucide-react';
+import { Button } from '../components/ui/Button';
+import { Calendar, ChevronLeft, ChevronRight, CheckCircle2, Plus } from 'lucide-react';
 import type { HabitCategory } from '../types';
 
 export const DailyTrackerView: React.FC = () => {
@@ -15,6 +16,7 @@ export const DailyTrackerView: React.FC = () => {
     selectedDayLogs,
     habits,
     updateHabitLog,
+    setIsAddHabitModalOpen,
   } = useApp();
 
   const activeHabits = habits.filter((h) => h.active);
@@ -96,6 +98,21 @@ export const DailyTrackerView: React.FC = () => {
         </div>
         <ProgressBar progress={completionPercent} color="gradient" height="lg" />
       </Card>
+
+      {/* Habits List Section Header */}
+      <div className="flex items-center justify-between pt-2">
+        <h3 className="text-base sm:text-lg font-black text-slate-100 flex items-center gap-2">
+          🔥 Daily Habits Check-In
+        </h3>
+        <Button
+          size="sm"
+          variant="primary"
+          onClick={() => setIsAddHabitModalOpen(true)}
+          icon={<Plus className="w-4 h-4" />}
+        >
+          Add Habit
+        </Button>
+      </div>
 
       {/* Grouped Habit Categories */}
       <div className="space-y-6">

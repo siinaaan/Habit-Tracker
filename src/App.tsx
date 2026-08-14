@@ -6,6 +6,7 @@ import { SidebarNavigation } from './components/layout/SidebarNavigation';
 import { BottomNavigation } from './components/layout/BottomNavigation';
 import { ToastContainer } from './components/ui/Toast';
 import { TaskModal } from './components/tasks/TaskModal';
+import { HabitModal } from './components/habits/HabitModal';
 
 import { AuthView } from './views/AuthView';
 import { DashboardView } from './views/DashboardView';
@@ -42,7 +43,15 @@ const MainContent: React.FC = () => {
 };
 
 const AppShell: React.FC = () => {
-  const { isAddTaskModalOpen, setIsAddTaskModalOpen } = useApp();
+  const {
+    isAddTaskModalOpen,
+    setIsAddTaskModalOpen,
+    isAddHabitModalOpen,
+    setIsAddHabitModalOpen,
+    editingHabit,
+    setEditingHabit,
+    saveHabit,
+  } = useApp();
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
@@ -56,6 +65,15 @@ const AppShell: React.FC = () => {
       <TaskModal
         isOpen={isAddTaskModalOpen}
         onClose={() => setIsAddTaskModalOpen(false)}
+      />
+      <HabitModal
+        isOpen={isAddHabitModalOpen}
+        onClose={() => {
+          setIsAddHabitModalOpen(false);
+          setEditingHabit(null);
+        }}
+        onSave={saveHabit}
+        initialHabit={editingHabit}
       />
     </div>
   );

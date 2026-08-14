@@ -1,21 +1,16 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import type { Habit } from '../../types';
-import { HabitModal } from './HabitModal';
 import { ConfirmationDialog } from '../ui/ConfirmationDialog';
 import { Button } from '../ui/Button';
 import { Plus, Edit2, Trash2, ArrowUp, ArrowDown, Search, Filter } from 'lucide-react';
 import { clsx } from 'clsx';
 
 export const HabitManager: React.FC = () => {
-  const { habits, saveHabit, saveHabitsOrder, deleteHabit } = useApp();
+  const { habits, saveHabit, saveHabitsOrder, deleteHabit, openAddHabitModal } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
   const [activeFilter, setActiveFilter] = useState<string>('ALL');
-
-  // Modal States
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingHabit, setEditingHabit] = useState<Habit | null>(null);
 
   // Confirmation Delete state
   const [deletingHabitId, setDeletingHabitId] = useState<string | null>(null);
@@ -32,13 +27,11 @@ export const HabitManager: React.FC = () => {
   ];
 
   const handleOpenCreate = () => {
-    setEditingHabit(null);
-    setIsModalOpen(true);
+    openAddHabitModal();
   };
 
   const handleOpenEdit = (habit: Habit) => {
-    setEditingHabit(habit);
-    setIsModalOpen(true);
+    openAddHabitModal(habit);
   };
 
   const handleToggleActive = (habit: Habit) => {
@@ -93,7 +86,7 @@ export const HabitManager: React.FC = () => {
           variant="primary"
           icon={<Plus className="w-4 h-4" />}
         >
-          Add Custom Habit
+          Add Habit
         </Button>
       </div>
 
@@ -227,14 +220,6 @@ export const HabitManager: React.FC = () => {
           </div>
         ))}
       </div>
-
-      {/* Habit Create / Edit Modal */}
-      <HabitModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSave={saveHabit}
-        initialHabit={editingHabit}
-      />
 
       {/* Confirmation Dialog for Delete */}
       <ConfirmationDialog
