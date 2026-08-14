@@ -7,10 +7,12 @@ import type {
   Goal,
   Reflection,
   LearningItem,
+  TaskItem,
   AppSettings,
   NavigationTab,
 } from '../types';
 import { StorageService } from '../services/storage';
+import { habitService } from '../services/habitService';
 import { AnalyticsService } from '../services/analytics';
 import confetti from 'canvas-confetti';
 
@@ -35,7 +37,12 @@ interface AppContextType {
   goals: Goal[];
   reflections: Reflection[];
   learningItems: LearningItem[];
+  tasks: TaskItem[];
   settings: AppSettings;
+
+  // Add Task Modal State
+  isAddTaskModalOpen: boolean;
+  setIsAddTaskModalOpen: (open: boolean) => void;
 
   // Active Day Number
   currentDayNumber: number;
@@ -61,6 +68,10 @@ interface AppContextType {
 
   saveLearningItem: (item: LearningItem) => void;
   deleteLearningItem: (id: string) => void;
+
+  saveTask: (task: TaskItem) => void;
+  deleteTask: (id: string) => void;
+  toggleTaskCompleted: (id: string) => void;
 
   updateSettings: (settings: AppSettings) => void;
 
@@ -93,7 +104,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [goals, setGoalsState] = useState<Goal[]>([]);
   const [reflections, setReflectionsState] = useState<Reflection[]>([]);
   const [learningItems, setLearningItemsState] = useState<LearningItem[]>([]);
+  const [tasks, setTasksState] = useState<TaskItem[]>([]);
   const [settings, setSettingsState] = useState<AppSettings>(StorageService.getSettings());
+
+  // Add Task Modal State
+  const [isAddTaskModalOpen, setIsAddTaskModalOpen] = useState<boolean>(false);
 
   // Toasts
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -118,13 +133,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  // Load state from local storage on mount
-  const refreshAllState = () => {
+  // Load state from habitService (which syncs Supabase + Local Cache)
+  const refreshAllState = async () => {
     StorageService.initializeStorage();
-    setActiveChallengeState(StorageService.getActiveChallenge());
-    setHabitsState(StorageService.getHabits());
+
+    const fetchedChallenge = await habitService.getChallengeProgress();
+    const fetchedHabits = await habitService.getHabits();
+    const fetchedLogs = await habitService.getHabitCompletions();
+    const fetchedTasks = await habitService.getTasks();
+
+    setActiveChallengeState(fetchedChallenge || StorageService.getActiveChallenge());
+    setHabitsState(fetchedHabits.length ? fetchedHabits : StorageService.getHabits());
+    setLogsState(fetchedLogs.length ? fetchedLogs : StorageService.getLogs());
+    setTasksState(fetchedTasks);
+    
     setTrackersState(StorageService.getTrackers());
-    setLogsState(StorageService.getLogs());
     setGoalsState(StorageService.getGoals());
     setReflectionsState(StorageService.getReflections());
     setLearningItemsState(StorageService.getLearningItems());
@@ -155,7 +178,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Selected date tracker & logs
   let selectedDayTracker = trackers.find((t) => t.date === selectedDate) || null;
   
-  // If no tracker exists for selectedDate, dynamically generate draft or ensure one
   const selectedDayLogs = selectedDayTracker
     ? logs.filter((l) => l.dailyTrackerId === selectedDayTracker!.id)
     : [];
@@ -163,6 +185,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // --- CRUD Implementations ---
   const saveChallenge = (challenge: Challenge) => {
     StorageService.saveChallenge(challenge);
+    habitService.updateChallengeProgress(challenge.id, challenge);
     setActiveChallengeState(challenge);
     showToast('Challenge updated successfully!', 'success');
   };
@@ -173,25 +196,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Challenge deleted.', 'info');
   };
 
-  const saveHabit = (habit: Habit) => {
+  const saveHabit = async (habit: Habit) => {
     StorageService.saveHabit(habit);
-    setHabitsState(StorageService.getHabits());
+    const existing = habits.find((h) => h.id === habit.id);
+    if (existing) {
+      await habitService.updateHabit(habit.id, habit);
+    } else {
+      await habitService.createHabit(habit);
+    }
+    const updatedList = await habitService.getHabits();
+    setHabitsState(updatedList);
     showToast(`Habit "${habit.name}" saved!`, 'success');
   };
 
   const saveHabitsOrder = (newHabits: Habit[]) => {
     StorageService.saveHabits(newHabits);
+    newHabits.forEach((h) => habitService.updateHabit(h.id, { order: h.order }));
     setHabitsState(newHabits);
   };
 
-  const deleteHabit = (id: string) => {
+  const deleteHabit = async (id: string) => {
     StorageService.deleteHabit(id);
-    setHabitsState(StorageService.getHabits());
+    await habitService.deleteHabit(id);
+    const updatedList = await habitService.getHabits();
+    setHabitsState(updatedList);
     showToast('Habit deleted.', 'info');
   };
 
   // Instant Habit Logging for current selected date
-  const updateHabitLog = (habitId: string, logData: Partial<HabitLog>) => {
+  const updateHabitLog = async (habitId: string, logData: Partial<HabitLog>) => {
     if (!activeChallenge) return;
 
     let tracker = trackers.find((t) => t.date === selectedDate);
@@ -220,6 +253,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       (l) => l.dailyTrackerId === tracker!.id && l.habitId === habitId
     );
 
+    let updatedLog: HabitLog;
+
     if (!existingLog) {
       existingLog = {
         id: `log-${tracker.id}-${habitId}`,
@@ -233,13 +268,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createdDate: new Date().toISOString(),
         updatedDate: new Date().toISOString(),
       };
+      updatedLog = { ...existingLog, ...logData, updatedDate: new Date().toISOString() };
+      await habitService.createCompletion(updatedLog);
+    } else {
+      updatedLog = { ...existingLog, ...logData, updatedDate: new Date().toISOString() };
+      await habitService.updateCompletion(updatedLog.id, updatedLog);
     }
-
-    const updatedLog: HabitLog = {
-      ...existingLog,
-      ...logData,
-      updatedDate: new Date().toISOString(),
-    };
 
     StorageService.saveLog(updatedLog);
 
@@ -264,7 +298,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Refresh memory states
     setTrackersState(StorageService.getTrackers());
-    setLogsState(StorageService.getLogs());
+    const latestLogs = await habitService.getHabitCompletions();
+    setLogsState(latestLogs);
 
     if (newCompletion === 100 && tracker.completionPercentage < 100) {
       triggerConfetti();
@@ -305,6 +340,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Reflection deleted.', 'info');
   };
 
+  // Tasks CRUD
+  const saveTask = async (task: TaskItem) => {
+    StorageService.saveTask(task);
+    const existing = tasks.find((t) => t.id === task.id);
+    if (existing) {
+      await habitService.updateTask(task.id, task);
+    } else {
+      await habitService.createTask(task);
+    }
+    const updatedTasks = await habitService.getTasks();
+    setTasksState(updatedTasks);
+    showToast(`Task "${task.title}" saved!`, 'success');
+  };
+
+  const deleteTask = async (id: string) => {
+    StorageService.deleteTask(id);
+    await habitService.deleteTask(id);
+    const updatedTasks = await habitService.getTasks();
+    setTasksState(updatedTasks);
+    showToast('Task deleted.', 'info');
+  };
+
+  const toggleTaskCompleted = async (id: string) => {
+    const task = tasks.find((t) => t.id === id);
+    if (!task) return;
+    const newStatus = !task.completed;
+    const updated = { ...task, completed: newStatus, updatedDate: new Date().toISOString() };
+    StorageService.saveTask(updated);
+    await habitService.updateTask(id, { completed: newStatus });
+    const updatedTasks = await habitService.getTasks();
+    setTasksState(updatedTasks);
+    if (newStatus) {
+      triggerConfetti();
+      showToast(`Task "${task.title}" completed!`, 'success');
+    }
+  };
+
   // Learning Items CRUD
   const saveLearningItem = (item: LearningItem) => {
     StorageService.saveLearningItem(item);
@@ -327,7 +399,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Actions
   const resetToNewChallenge = (name?: string, startDate?: string) => {
-    StorageService.resetToNewChallenge(name, startDate);
+    const newCh = StorageService.resetToNewChallenge(name, startDate);
+    habitService.createChallengeProgress(newCh);
     refreshAllState();
     triggerConfetti();
     showToast('🔥 New 90-Day Challenge Started! Day 1 is Live.', 'success');
@@ -363,7 +436,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         goals,
         reflections,
         learningItems,
+        tasks,
         settings,
+        isAddTaskModalOpen,
+        setIsAddTaskModalOpen,
         currentDayNumber,
         selectedDayTracker,
         selectedDayLogs,
@@ -380,6 +456,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteReflection,
         saveLearningItem,
         deleteLearningItem,
+        saveTask,
+        deleteTask,
+        toggleTaskCompleted,
         updateSettings,
         triggerConfetti,
         resetToNewChallenge,

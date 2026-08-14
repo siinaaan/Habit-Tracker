@@ -5,6 +5,7 @@ import { ProgressRing } from '../components/ui/ProgressRing';
 import { ProgressBar } from '../components/ui/ProgressBar';
 import { Card, CardTitle } from '../components/ui/Card';
 import { HabitCard } from '../components/habits/HabitCard';
+import { TaskList } from '../components/tasks/TaskList';
 import { AnalyticsService } from '../services/analytics';
 import { Button } from '../components/ui/Button';
 import {
@@ -17,6 +18,8 @@ import {
   Smartphone,
   Calendar,
   CheckCircle2,
+  CheckSquare,
+  Plus,
   ArrowRight,
 } from 'lucide-react';
 
@@ -27,11 +30,13 @@ export const DashboardView: React.FC = () => {
     trackers,
     logs,
     habits,
+    tasks,
     selectedDayTracker,
     selectedDayLogs,
     updateHabitLog,
     setActiveTab,
     selectedDate,
+    setIsAddTaskModalOpen,
   } = useApp();
 
   const activeHabits = habits.filter((h) => h.active);
@@ -59,6 +64,14 @@ export const DashboardView: React.FC = () => {
   const totalPomodoros = AnalyticsService.calculateTotalMetric('habit-pomodoro', logs);
   const totalLeetcode = AnalyticsService.calculateTotalMetric('habit-leetcode', logs);
   const averageScreenTime = AnalyticsService.calculateAverageMetric('habit-scroll', logs, 2.8);
+
+  // Real Task statistics calculated directly from stored task data
+  const totalTasksCount = tasks.length;
+  const completedTasksCount = tasks.filter((t) => t.completed).length;
+  const dueTodayTasksCount = tasks.filter((t) => t.dueDate === selectedDate).length;
+  const taskCompletionPercent = totalTasksCount
+    ? Math.round((completedTasksCount / totalTasksCount) * 100)
+    : 0;
 
   // Today's completion stats
   const todayCompletion = selectedDayTracker ? selectedDayTracker.completionPercentage : 0;
@@ -239,6 +252,44 @@ export const DashboardView: React.FC = () => {
           )}
         </Card>
       </div>
+
+      {/* Real Task Telemetry & Task List Section */}
+      <Card className="space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <CardTitle>
+            <CheckSquare className="w-5 h-5 text-indigo-400" /> Actionable Tasks & To-Dos
+          </CardTitle>
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => setIsAddTaskModalOpen(true)}
+            icon={<Plus className="w-4 h-4" />}
+          >
+            + Add Task
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 py-2">
+          <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+            <p className="text-[10px] font-bold text-slate-400 uppercase">Total Tasks</p>
+            <p className="text-xl font-black text-white mt-0.5">{totalTasksCount}</p>
+          </div>
+          <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+            <p className="text-[10px] font-bold text-slate-400 uppercase">Completed</p>
+            <p className="text-xl font-black text-emerald-400 mt-0.5">{completedTasksCount}</p>
+          </div>
+          <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+            <p className="text-[10px] font-bold text-slate-400 uppercase">Due Today</p>
+            <p className="text-xl font-black text-indigo-400 mt-0.5">{dueTodayTasksCount}</p>
+          </div>
+          <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+            <p className="text-[10px] font-bold text-slate-400 uppercase">Task Completion</p>
+            <p className="text-xl font-black text-amber-400 mt-0.5">{taskCompletionPercent}%</p>
+          </div>
+        </div>
+
+        <TaskList />
+      </Card>
     </div>
   );
 };

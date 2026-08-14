@@ -6,6 +6,7 @@ import type {
   Goal,
   Reflection,
   LearningItem,
+  TaskItem,
   AppSettings,
 } from '../types';
 import { DEFAULT_HABITS } from '../constants/defaultHabits';
@@ -26,6 +27,7 @@ const KEYS = {
   GOALS: 'life_upgrade_goals',
   REFLECTIONS: 'life_upgrade_reflections',
   LEARNING: 'life_upgrade_learning',
+  TASKS: 'life_upgrade_tasks',
   SETTINGS: 'life_upgrade_settings',
 };
 
@@ -49,21 +51,50 @@ function setItem<T>(key: string, value: T): void {
 }
 
 export class StorageService {
-  // Initialize storage with Demo Data if empty
+  // Initialize storage with clean zero-progress state if empty
   static initializeStorage(): void {
     const existingChallenges = localStorage.getItem(KEYS.CHALLENGES);
     if (!existingChallenges) {
-      console.log('Initializing application with default demo data...');
-      const { trackers, logs } = generateDemoDailyData();
-      
-      setItem(KEYS.CHALLENGES, [DEMO_CHALLENGE]);
+      console.log('Initializing application with fresh zero-progress challenge...');
+      const todayStr = new Date().toISOString().split('T')[0];
+      const endDateObj = new Date();
+      endDateObj.setDate(endDateObj.getDate() + 89);
+
+      const freshChallenge: Challenge = {
+        id: `challenge-${Date.now()}`,
+        name: '90-Day High Performance Upgrade',
+        startDate: todayStr,
+        endDate: endDateObj.toISOString().split('T')[0],
+        description: 'Transforming discipline, spiritual alignment, coding mastery, and physical health in 90 structured days.',
+        status: 'Active',
+        createdDate: new Date().toISOString(),
+        updatedDate: new Date().toISOString(),
+      };
+
+      const freshSettings: AppSettings = {
+        theme: 'dark',
+        waterGoal: 2.5,
+        sleepGoalHours: 8,
+        screenTimeLimitHours: 3.5,
+        pomodoroSettings: {
+          focusDuration: 50,
+          shortBreakDuration: 10,
+          longBreakDuration: 20,
+          longBreakInterval: 4,
+          workStartTime: '09:30',
+          workEndTime: '16:30',
+        },
+        isDemoMode: false,
+      };
+
+      setItem(KEYS.CHALLENGES, [freshChallenge]);
       setItem(KEYS.HABITS, DEFAULT_HABITS);
-      setItem(KEYS.TRACKERS, trackers);
-      setItem(KEYS.LOGS, logs);
-      setItem(KEYS.GOALS, DEMO_GOALS);
-      setItem(KEYS.REFLECTIONS, DEMO_REFLECTIONS);
-      setItem(KEYS.LEARNING, DEMO_LEARNING);
-      setItem(KEYS.SETTINGS, DEMO_SETTINGS);
+      setItem(KEYS.TRACKERS, []);
+      setItem(KEYS.LOGS, []);
+      setItem(KEYS.GOALS, []);
+      setItem(KEYS.REFLECTIONS, []);
+      setItem(KEYS.LEARNING, []);
+      setItem(KEYS.SETTINGS, freshSettings);
     }
   }
 
@@ -248,6 +279,30 @@ export class StorageService {
   static deleteLearningItem(id: string): void {
     const items = this.getLearningItems().filter((i) => i.id !== id);
     setItem(KEYS.LEARNING, items);
+  }
+
+  // --- Tasks ---
+  static getTasks(): TaskItem[] {
+    return getItem<TaskItem[]>(KEYS.TASKS, []);
+  }
+
+  static saveTask(task: TaskItem): TaskItem {
+    const tasks = this.getTasks();
+    const idx = tasks.findIndex((t) => t.id === task.id);
+    let updated: TaskItem[];
+    if (idx >= 0) {
+      tasks[idx] = { ...task, updatedDate: new Date().toISOString() };
+      updated = [...tasks];
+    } else {
+      updated = [...tasks, task];
+    }
+    setItem(KEYS.TASKS, updated);
+    return task;
+  }
+
+  static deleteTask(id: string): void {
+    const tasks = this.getTasks().filter((t) => t.id !== id);
+    setItem(KEYS.TASKS, tasks);
   }
 
   // --- Settings ---

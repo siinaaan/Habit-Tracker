@@ -1,7 +1,10 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { Button } from '../ui/Button';
-import { Timer, Sun, Moon, Calendar as CalendarIcon, Flame } from 'lucide-react';
+import { SyncStatusIndicator } from '../ui/SyncStatusIndicator';
+import { GlobalSearch } from '../search/GlobalSearch';
+import { TaskModal } from '../tasks/TaskModal';
+import { Timer, Sun, Moon, Calendar as CalendarIcon, Flame, Plus } from 'lucide-react';
 
 export const Header: React.FC = () => {
   const {
@@ -13,6 +16,8 @@ export const Header: React.FC = () => {
     updateSettings,
     setActiveTab,
     resetToNewChallenge,
+    isAddTaskModalOpen,
+    setIsAddTaskModalOpen,
   } = useApp();
 
   const isDark = settings.theme === 'dark';
@@ -26,24 +31,27 @@ export const Header: React.FC = () => {
 
   return (
     <header className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-xl border-b border-slate-800/80 px-4 md:px-8 py-3 transition-colors">
-      <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+      <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 sm:gap-4">
         {/* Left Brand / Title */}
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-gradient-to-tr from-amber-500 via-orange-500 to-rose-500 text-white shadow-lg shadow-orange-500/20">
-            <Flame className="w-6 h-6 animate-pulse" />
+        <div className="flex items-center gap-2.5">
+          <div className="p-2 sm:p-2.5 rounded-xl bg-gradient-to-tr from-amber-500 via-orange-500 to-rose-500 text-white shadow-lg shadow-orange-500/20 shrink-0">
+            <Flame className="w-5 h-5 sm:w-6 sm:h-6 animate-pulse" />
           </div>
-          <div>
-            <h1 className="text-lg md:text-xl font-black tracking-tight text-white flex items-center gap-2">
+          <div className="hidden min-[400px]:block">
+            <h1 className="text-base sm:text-lg md:text-xl font-black tracking-tight text-white flex items-center gap-1.5">
               90 DAYS <span className="text-orange-500">LIFE UPGRADE</span>
             </h1>
-            <p className="text-xs text-slate-400 font-medium hidden sm:block">
+            <p className="text-xs text-slate-400 font-medium hidden md:block">
               {activeChallenge?.name || 'Personal Growth Tracker'}
             </p>
           </div>
         </div>
 
+        {/* Global Search Component */}
+        <GlobalSearch />
+
         {/* Center: Current Day Badge */}
-        <div className="flex items-center gap-2">
+        <div className="hidden lg:flex items-center gap-2">
           <div className="px-3.5 py-1.5 rounded-full bg-slate-900 border border-slate-700/80 flex items-center gap-2 shadow-inner">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
             <span className="text-xs font-bold text-slate-200 uppercase tracking-wider">
@@ -51,8 +59,7 @@ export const Header: React.FC = () => {
             </span>
           </div>
 
-          {/* Quick Date Selector */}
-          <div className="hidden sm:flex items-center gap-1.5 bg-slate-900 border border-slate-800 px-2.5 py-1 rounded-xl text-xs text-slate-300">
+          <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 px-2.5 py-1 rounded-xl text-xs text-slate-300">
             <CalendarIcon className="w-3.5 h-3.5 text-indigo-400" />
             <input
               type="date"
@@ -64,14 +71,27 @@ export const Header: React.FC = () => {
         </div>
 
         {/* Right Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Add Task Button (Desktop: + Add Task, Mobile: +) */}
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => setIsAddTaskModalOpen(true)}
+            icon={<Plus className="w-4 h-4" />}
+          >
+            <span className="hidden sm:inline">Add Task</span>
+          </Button>
+
+          {/* Sync Status Badge */}
+          <SyncStatusIndicator />
+
           {/* Quick Pomodoro Launcher */}
           <Button
             size="sm"
             variant="secondary"
             onClick={() => setActiveTab('pomodoro')}
             icon={<Timer className="w-4 h-4 text-orange-400" />}
-            className="hidden sm:inline-flex"
+            className="hidden md:inline-flex"
           >
             Pomodoro
           </Button>
@@ -86,6 +106,12 @@ export const Header: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Add Task Modal */}
+      <TaskModal
+        isOpen={isAddTaskModalOpen}
+        onClose={() => setIsAddTaskModalOpen(false)}
+      />
 
       {/* Demo Mode Banner */}
       {settings.isDemoMode && (

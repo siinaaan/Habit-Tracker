@@ -145,6 +145,24 @@ export interface WeeklySummary {
   sleepConsistency: number;
 }
 
+export type TaskPriority = 'Low' | 'Medium' | 'High';
+export type TaskRepeatType = 'None' | 'Daily' | 'Weekly' | 'Custom';
+
+export interface TaskItem {
+  id: string;
+  title: string;
+  description?: string;
+  category: string;
+  priority: TaskPriority;
+  dueDate: string;     // ISO format YYYY-MM-DD
+  dueTime?: string;    // e.g. "14:30"
+  repeatType: TaskRepeatType;
+  habitId?: string | null;
+  completed: boolean;
+  createdDate: string;
+  updatedDate: string;
+}
+
 export type NavigationTab =
   | 'dashboard'
   | 'daily'
