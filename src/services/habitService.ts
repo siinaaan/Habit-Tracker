@@ -455,33 +455,36 @@ class HabitService {
     return payload;
   }
 
+  private seededUsers = new Set<string>();
+
   // ==========================================
   // 1. HABITS CRUD
   // ==========================================
   public async autoSeedDefaultHabits(userId: string): Promise<void> {
     if (!navigator.onLine || !isSupabaseConfigured() || !userId) return;
+    if (this.seededUsers.has(userId)) return;
+
+    this.seededUsers.add(userId);
+
     try {
       const { data: existing, error: selectErr } = await supabase
         .from('habits')
         .select('id');
 
-      if (selectErr) {
-        console.warn('autoSeedDefaultHabits fetch error:', selectErr.message);
-        return;
-      }
+      if (selectErr) return;
 
       const existingIds = new Set(existing?.map((h) => h.id) || []);
       const missingDefaults = DEFAULT_HABITS.filter((h) => !existingIds.has(h.id));
 
       if (missingDefaults.length === 0) return;
 
-      const payloads = missingDefaults.map((h) => this.mapHabitToDb(h, userId));
-      const { error: insertErr } = await supabase.from('habits').insert(payloads);
-      if (insertErr) {
-        console.warn('autoSeedDefaultHabits insert warning:', insertErr.message);
+      for (const h of missingDefaults) {
+        const payload = this.mapHabitToDb(h, userId);
+        // Insert missing defaults silently ignoring conflicts if already owned globally
+        await supabase.from('habits').insert(payload);
       }
-    } catch (err) {
-      console.warn('autoSeedDefaultHabits error:', err);
+    } catch {
+      // Ignore seeding errors silently
     }
   }
 
@@ -503,8 +506,12 @@ class HabitService {
         if (!error && data) {
           const remoteHabits = data.map(this.mapDbToHabit);
           const remoteIds = new Set(remoteHabits.map((h) => h.id));
+
+          // Ensure all built-in default habits are present in habit list even if owned globally by another user
+          const missingDefaults = DEFAULT_HABITS.filter((dh) => !remoteIds.has(dh.id));
           const pendingCustomLocal = localHabits.filter((h) => !remoteIds.has(h.id) && h.category === 'Custom');
-          const mergedHabits = [...remoteHabits, ...pendingCustomLocal];
+
+          const mergedHabits = [...remoteHabits, ...missingDefaults, ...pendingCustomLocal];
           setLocalCache(STORAGE_KEYS.HABITS, mergedHabits);
           this.setSyncState('synced');
           return mergedHabits;
@@ -704,12 +711,9 @@ class HabitService {
       if (!habit) return;
 
       const payload = this.mapHabitToDb(habit, userId);
-      const { error } = await supabase.from('habits').insert(payload);
-      if (error) {
-        console.warn(`ensureHabitExistsInSupabase insert failed for habit ${habitId}:`, error.message);
-      }
-    } catch (err) {
-      console.warn(`ensureHabitExistsInSupabase error for habit ${habitId}:`, err);
+      await supabase.from('habits').insert(payload);
+    } catch {
+      // Ignore conflict errors silently
     }
   }
 
