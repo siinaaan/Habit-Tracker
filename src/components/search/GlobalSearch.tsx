@@ -188,7 +188,7 @@ export const GlobalSearch: React.FC = () => {
         results.push({
           id: `e-${e.id}`,
           type: 'Expense',
-          title: `${e.type === 'income' ? '+' : '-'}\$${e.amount.toFixed(2)} - ${e.title}`,
+          title: `${e.type === 'income' ? '+' : '-'}₹${e.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} - ${e.title}`,
           subtitle: `${e.category} • ${e.date}${e.note ? ` • ${e.note}` : ''}`,
           targetTab: 'expenses',
           badgeColor: e.type === 'income' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-rose-500/10 text-rose-400 border-rose-500/30',

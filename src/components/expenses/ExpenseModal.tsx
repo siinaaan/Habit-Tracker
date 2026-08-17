@@ -153,7 +153,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-              Amount ($) *
+              Amount (₹) *
             </label>
             <input
               type="number"

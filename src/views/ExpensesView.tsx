@@ -7,7 +7,7 @@ import {
   Wallet,
   TrendingUp,
   TrendingDown,
-  DollarSign,
+  Coins,
   Plus,
   Search,
   Filter,
@@ -19,6 +19,12 @@ import {
   ArrowDownRight,
 } from 'lucide-react';
 import { clsx } from 'clsx';
+
+const formatINR = (val: number) =>
+  val.toLocaleString('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 
 export const ExpensesView: React.FC = () => {
   const { expenses, deleteExpense } = useApp();
@@ -151,7 +157,7 @@ export const ExpensesView: React.FC = () => {
           </div>
           <div className="mt-3">
             <p className="text-2xl sm:text-3xl font-black text-slate-100 tracking-tight">
-              ${totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              ₹{formatINR(totalIncome)}
             </p>
             <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
               <TrendingUp className="w-3.5 h-3.5 text-emerald-400 inline" /> Total credited earnings
@@ -171,7 +177,7 @@ export const ExpensesView: React.FC = () => {
           </div>
           <div className="mt-3">
             <p className="text-2xl sm:text-3xl font-black text-slate-100 tracking-tight">
-              ${totalExpenses.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              ₹{formatINR(totalExpenses)}
             </p>
             <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
               <TrendingDown className="w-3.5 h-3.5 text-rose-400 inline" /> Total spent outlays
@@ -186,12 +192,12 @@ export const ExpensesView: React.FC = () => {
               Net Balance
             </span>
             <div className={`p-2 rounded-xl ${balance >= 0 ? 'bg-indigo-500/10 text-indigo-400' : 'bg-rose-500/10 text-rose-400'}`}>
-              <DollarSign className="w-5 h-5" />
+              <Coins className="w-5 h-5" />
             </div>
           </div>
           <div className="mt-3">
             <p className={`text-2xl sm:text-3xl font-black tracking-tight ${balance >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {balance < 0 ? '-' : ''}${Math.abs(balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {balance < 0 ? '-' : ''}₹{formatINR(Math.abs(balance))}
             </p>
             <p className="text-[11px] text-slate-400 mt-1">
               Income minus total expenses
@@ -389,7 +395,7 @@ export const ExpensesView: React.FC = () => {
                         isIncome ? 'text-emerald-400' : 'text-rose-400'
                       }`}
                     >
-                      {isIncome ? '+' : '-'}${expense.amount.toFixed(2)}
+                      {isIncome ? '+' : '-'}₹{formatINR(expense.amount)}
                     </span>
 
                     <div className="flex items-center gap-1">
@@ -439,7 +445,7 @@ export const ExpensesView: React.FC = () => {
         title="Delete Transaction"
         message={
           deleteTarget
-            ? `Are you sure you want to delete "${deleteTarget.title}" ($${deleteTarget.amount.toFixed(2)})?`
+            ? `Are you sure you want to delete "${deleteTarget.title}" (₹${formatINR(deleteTarget.amount)})?`
             : ''
         }
         confirmText="Delete"
