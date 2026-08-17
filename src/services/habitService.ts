@@ -461,10 +461,24 @@ class HabitService {
   public async autoSeedDefaultHabits(userId: string): Promise<void> {
     if (!navigator.onLine || !isSupabaseConfigured() || !userId) return;
     try {
-      const payloads = DEFAULT_HABITS.map((h) => this.mapHabitToDb(h, userId));
-      const { error } = await supabase.from('habits').upsert(payloads);
-      if (error) {
-        console.warn('autoSeedDefaultHabits warning:', error.message);
+      const { data: existing, error: selectErr } = await supabase
+        .from('habits')
+        .select('id');
+
+      if (selectErr) {
+        console.warn('autoSeedDefaultHabits fetch error:', selectErr.message);
+        return;
+      }
+
+      const existingIds = new Set(existing?.map((h) => h.id) || []);
+      const missingDefaults = DEFAULT_HABITS.filter((h) => !existingIds.has(h.id));
+
+      if (missingDefaults.length === 0) return;
+
+      const payloads = missingDefaults.map((h) => this.mapHabitToDb(h, userId));
+      const { error: insertErr } = await supabase.from('habits').insert(payloads);
+      if (insertErr) {
+        console.warn('autoSeedDefaultHabits insert warning:', insertErr.message);
       }
     } catch (err) {
       console.warn('autoSeedDefaultHabits error:', err);
@@ -678,18 +692,21 @@ class HabitService {
   private async ensureHabitExistsInSupabase(habitId: string, userId: string): Promise<void> {
     if (!navigator.onLine || !isSupabaseConfigured() || !userId || !habitId) return;
 
-    const habits = getLocalCache<Habit[]>(STORAGE_KEYS.HABITS, DEFAULT_HABITS);
-    let habit = habits.find((h) => h.id === habitId);
-    if (!habit) {
-      habit = DEFAULT_HABITS.find((h) => h.id === habitId);
-    }
-    if (!habit) return;
-
-    const payload = this.mapHabitToDb(habit, userId);
     try {
-      const { error } = await supabase.from('habits').upsert(payload);
+      const { data } = await supabase.from('habits').select('id').eq('id', habitId).maybeSingle();
+      if (data) return;
+
+      const habits = getLocalCache<Habit[]>(STORAGE_KEYS.HABITS, DEFAULT_HABITS);
+      let habit = habits.find((h) => h.id === habitId);
+      if (!habit) {
+        habit = DEFAULT_HABITS.find((h) => h.id === habitId);
+      }
+      if (!habit) return;
+
+      const payload = this.mapHabitToDb(habit, userId);
+      const { error } = await supabase.from('habits').insert(payload);
       if (error) {
-        console.warn(`ensureHabitExistsInSupabase failed for habit ${habitId}:`, error.message);
+        console.warn(`ensureHabitExistsInSupabase insert failed for habit ${habitId}:`, error.message);
       }
     } catch (err) {
       console.warn(`ensureHabitExistsInSupabase error for habit ${habitId}:`, err);
