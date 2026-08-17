@@ -138,6 +138,11 @@ class HabitService {
         item.payload.user_id = currentUserId;
       }
 
+      // Ensure parent habit exists in Supabase before syncing a completion
+      if (item.table === 'habit_completions' && item.payload && item.payload.habit_id) {
+        await this.ensureHabitExistsInSupabase(item.payload.habit_id, currentUserId);
+      }
+
       try {
         let error: any = null;
         if (item.action === 'INSERT' || item.action === 'UPDATE') {
@@ -573,6 +578,27 @@ class HabitService {
       : localCompletions;
   }
 
+  private async ensureHabitExistsInSupabase(habitId: string, userId: string): Promise<void> {
+    if (!navigator.onLine || !isSupabaseConfigured() || !userId || !habitId) return;
+
+    const habits = getLocalCache<Habit[]>(STORAGE_KEYS.HABITS, DEFAULT_HABITS);
+    let habit = habits.find((h) => h.id === habitId);
+    if (!habit) {
+      habit = DEFAULT_HABITS.find((h) => h.id === habitId);
+    }
+    if (!habit) return;
+
+    const payload = this.mapHabitToDb(habit, userId);
+    try {
+      const { error } = await supabase.from('habits').upsert(payload);
+      if (error) {
+        console.warn(`ensureHabitExistsInSupabase failed for habit ${habitId}:`, error.message);
+      }
+    } catch (err) {
+      console.warn(`ensureHabitExistsInSupabase error for habit ${habitId}:`, err);
+    }
+  }
+
   public async getCompletionsByDate(dateStr: string): Promise<HabitLog[]> {
     const all = await this.getHabitCompletions();
     return all.filter((l) => l.dailyTrackerId === dateStr || l.dailyTrackerId === `tracker-${dateStr}` || l.dailyTrackerId.includes(dateStr));
@@ -591,6 +617,8 @@ class HabitService {
         this.setSyncState('offline');
         return { completion, synced: false, error: 'No active session' };
       }
+
+      await this.ensureHabitExistsInSupabase(completion.habitId, userId);
 
       const payload = this.mapCompletionToDb(completion, userId);
       try {
@@ -641,6 +669,8 @@ class HabitService {
         this.setSyncState('offline');
         return { completion: updatedLog, synced: false, error: 'No active session' };
       }
+
+      await this.ensureHabitExistsInSupabase(updatedLog.habitId, userId);
 
       const payload = this.mapCompletionToDb(updatedLog, userId);
       try {
