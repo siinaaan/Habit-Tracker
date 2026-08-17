@@ -76,10 +76,12 @@ export const DashboardView: React.FC = () => {
     ? Math.round((completedTasksCount / totalTasksCount) * 100)
     : 0;
 
-  // Today's completion stats
-  const todayCompletion = selectedDayTracker ? selectedDayTracker.completionPercentage : 0;
-  
+  // Today's completion stats derived directly from current logs and active habits
   const completedLogsCount = selectedDayLogs.filter((l) => l.completed).length;
+  const todayCompletion = activeHabits.length
+    ? Math.round((completedLogsCount / activeHabits.length) * 100)
+    : (selectedDayTracker ? selectedDayTracker.completionPercentage : 0);
+
   const remainingHabits = activeHabits.filter((h) => {
     const log = selectedDayLogs.find((l) => l.habitId === h.id);
     return !log?.completed;

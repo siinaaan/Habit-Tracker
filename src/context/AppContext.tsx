@@ -213,24 +213,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Selected date tracker & logs
   const deterministicTrackerId = `tracker-${selectedDate}`;
-  let selectedDayTracker = trackers.find((t) => t.date === selectedDate || t.id === deterministicTrackerId) || {
-    id: deterministicTrackerId,
-    challengeId: activeChallenge?.id || '',
-    dayNumber: currentDayNumber,
-    date: selectedDate,
-    completionPercentage: 0,
-    notes: '',
-    createdDate: new Date().toISOString(),
-    updatedDate: new Date().toISOString(),
-  };
-
   const selectedDayLogs = logs.filter(
     (l) =>
-      l.dailyTrackerId === selectedDayTracker.id ||
       l.dailyTrackerId === deterministicTrackerId ||
       l.dailyTrackerId === selectedDate ||
       l.dailyTrackerId.includes(selectedDate)
   );
+
+  const activeHabitsList = habits.filter((h) => h.active);
+  const completedLogsForSelectedDay = selectedDayLogs.filter((l) => l.completed).length;
+  const computedCompletionPercentage = activeHabitsList.length
+    ? Math.round((completedLogsForSelectedDay / activeHabitsList.length) * 100)
+    : 0;
+
+  const baseTracker = trackers.find((t) => t.date === selectedDate || t.id === deterministicTrackerId);
+  const selectedDayTracker: DailyTracker = {
+    id: baseTracker?.id || deterministicTrackerId,
+    challengeId: baseTracker?.challengeId || activeChallenge?.id || '',
+    dayNumber: baseTracker?.dayNumber || currentDayNumber,
+    date: selectedDate,
+    completionPercentage: computedCompletionPercentage,
+    notes: baseTracker?.notes || '',
+    createdDate: baseTracker?.createdDate || new Date().toISOString(),
+    updatedDate: baseTracker?.updatedDate || new Date().toISOString(),
+  };
 
   // --- CRUD Implementations ---
   const saveChallenge = (challenge: Challenge) => {

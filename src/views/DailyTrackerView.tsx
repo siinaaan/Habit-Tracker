@@ -20,7 +20,10 @@ export const DailyTrackerView: React.FC = () => {
   } = useApp();
 
   const activeHabits = habits.filter((h) => h.active);
-  const completionPercent = selectedDayTracker ? selectedDayTracker.completionPercentage : 0;
+  const completedLogsCount = selectedDayLogs.filter((l) => l.completed).length;
+  const completionPercent = activeHabits.length
+    ? Math.round((completedLogsCount / activeHabits.length) * 100)
+    : (selectedDayTracker ? selectedDayTracker.completionPercentage : 0);
 
   const handlePrevDay = () => {
     const curr = new Date(selectedDate);
