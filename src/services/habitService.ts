@@ -93,41 +93,41 @@ class HabitService {
         .channel(channelName)
         .on(
           'postgres_changes',
-          { event: '*', schema: 'public', table: 'habits', filter: `user_id=eq.${userId}` },
+          { event: '*', schema: 'public', table: 'habits' },
           (payload) => {
-            console.log('Realtime habits mutation:', payload.eventType);
+            console.log('[Realtime Event] habits:', payload.eventType, payload);
             this.triggerRemoteChangeCallback();
           }
         )
         .on(
           'postgres_changes',
-          { event: '*', schema: 'public', table: 'habit_completions', filter: `user_id=eq.${userId}` },
+          { event: '*', schema: 'public', table: 'habit_completions' },
           (payload) => {
-            console.log('Realtime habit_completions mutation:', payload.eventType);
+            console.log('[Realtime Event] habit_completions:', payload.eventType, payload);
             this.triggerRemoteChangeCallback();
           }
         )
         .on(
           'postgres_changes',
-          { event: '*', schema: 'public', table: 'tasks', filter: `user_id=eq.${userId}` },
+          { event: '*', schema: 'public', table: 'tasks' },
           (payload) => {
-            console.log('Realtime tasks mutation:', payload.eventType);
+            console.log('[Realtime Event] tasks:', payload.eventType, payload);
             this.triggerRemoteChangeCallback();
           }
         )
         .on(
           'postgres_changes',
-          { event: '*', schema: 'public', table: 'expenses', filter: `user_id=eq.${userId}` },
+          { event: '*', schema: 'public', table: 'expenses' },
           (payload) => {
-            console.log('Realtime expenses mutation:', payload.eventType);
+            console.log('[Realtime Event] expenses:', payload.eventType, payload);
             this.triggerRemoteChangeCallback();
           }
         )
         .subscribe((status, err) => {
           if (status === 'SUBSCRIBED') {
-            console.log(`Supabase Realtime connected successfully for user: ${userId}`);
+            console.log(`[Realtime] Connected & listening for user: ${userId}`);
           } else if (err) {
-            console.warn(`Supabase Realtime subscription status [${status}]:`, err);
+            console.warn(`[Realtime] Subscription status [${status}]:`, err);
           }
         });
     } catch (err) {

@@ -162,10 +162,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const fetchedExpenses = await habitService.getExpenses();
 
     setActiveChallengeState(fetchedChallenge || StorageService.getActiveChallenge());
-    setHabitsState(fetchedHabits.length ? fetchedHabits : StorageService.getHabits());
-    setLogsState(fetchedLogs.length ? fetchedLogs : StorageService.getLogs());
+    setHabitsState(fetchedHabits);
+    setLogsState(fetchedLogs);
     setTasksState(fetchedTasks);
-    setExpensesState(fetchedExpenses.length ? fetchedExpenses : StorageService.getExpenses());
+    setExpensesState(fetchedExpenses);
     
     setTrackersState(StorageService.getTrackers());
     setGoalsState(StorageService.getGoals());
