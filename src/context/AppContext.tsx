@@ -10,6 +10,7 @@ import type {
   TaskItem,
   AppSettings,
   NavigationTab,
+  ExpenseTransaction,
 } from '../types';
 import { StorageService } from '../services/storage';
 import { habitService } from '../services/habitService';
@@ -38,6 +39,7 @@ interface AppContextType {
   reflections: Reflection[];
   learningItems: LearningItem[];
   tasks: TaskItem[];
+  expenses: ExpenseTransaction[];
   settings: AppSettings;
 
   // Add Task & Add Habit Modal State
@@ -78,6 +80,9 @@ interface AppContextType {
   deleteTask: (id: string) => void;
   toggleTaskCompleted: (id: string) => void;
 
+  saveExpense: (expense: ExpenseTransaction) => void;
+  deleteExpense: (id: string) => void;
+
   updateSettings: (settings: AppSettings) => void;
 
   // Actions
@@ -110,6 +115,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [reflections, setReflectionsState] = useState<Reflection[]>([]);
   const [learningItems, setLearningItemsState] = useState<LearningItem[]>([]);
   const [tasks, setTasksState] = useState<TaskItem[]>([]);
+  const [expenses, setExpensesState] = useState<ExpenseTransaction[]>([]);
   const [settings, setSettingsState] = useState<AppSettings>(StorageService.getSettings());
 
   // Add Task & Add Habit Modal State
@@ -153,11 +159,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const fetchedHabits = await habitService.getHabits();
     const fetchedLogs = await habitService.getHabitCompletions();
     const fetchedTasks = await habitService.getTasks();
+    const fetchedExpenses = await habitService.getExpenses();
 
     setActiveChallengeState(fetchedChallenge || StorageService.getActiveChallenge());
     setHabitsState(fetchedHabits.length ? fetchedHabits : StorageService.getHabits());
     setLogsState(fetchedLogs.length ? fetchedLogs : StorageService.getLogs());
     setTasksState(fetchedTasks);
+    setExpensesState(fetchedExpenses.length ? fetchedExpenses : StorageService.getExpenses());
     
     setTrackersState(StorageService.getTrackers());
     setGoalsState(StorageService.getGoals());
@@ -424,6 +432,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Learning item deleted.', 'info');
   };
 
+  // Expenses CRUD
+  const saveExpense = async (expense: ExpenseTransaction) => {
+    StorageService.saveExpense(expense);
+    const existing = expenses.find((e) => e.id === expense.id);
+    let res: { synced: boolean; error?: string };
+    if (existing) {
+      res = await habitService.updateExpense(expense.id, expense);
+    } else {
+      res = await habitService.createExpense(expense);
+    }
+    const updatedExpenses = await habitService.getExpenses();
+    setExpensesState(updatedExpenses);
+
+    if (res.synced) {
+      showToast(`Expense transaction "${expense.title}" saved & synced!`, 'success');
+    } else if (res.error) {
+      showToast(`Transaction saved locally (Cloud error: ${res.error})`, 'warning');
+    } else {
+      showToast(`Transaction "${expense.title}" saved locally (offline)`, 'info');
+    }
+  };
+
+  const deleteExpense = async (id: string) => {
+    StorageService.deleteExpense(id);
+    await habitService.deleteExpense(id);
+    const updatedExpenses = await habitService.getExpenses();
+    setExpensesState(updatedExpenses);
+    showToast('Expense transaction deleted.', 'info');
+  };
+
   // Settings
   const updateSettings = (newSettings: AppSettings) => {
     StorageService.saveSettings(newSettings);
@@ -471,6 +509,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         reflections,
         learningItems,
         tasks,
+        expenses,
         settings,
         isAddTaskModalOpen,
         setIsAddTaskModalOpen,
@@ -498,6 +537,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         saveTask,
         deleteTask,
         toggleTaskCompleted,
+        saveExpense,
+        deleteExpense,
         updateSettings,
         triggerConfetti,
         resetToNewChallenge,

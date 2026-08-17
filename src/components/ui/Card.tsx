@@ -16,7 +16,7 @@ export const Card: React.FC<CardProps> = ({
   return (
     <div
       className={clsx(
-        'rounded-2xl p-5 border shadow-xl transition-all duration-200',
+        'rounded-2xl p-4 sm:p-5 border shadow-xl transition-all duration-200',
         glass
           ? 'bg-slate-900/60 backdrop-blur-xl border-slate-800/80 text-slate-100'
           : 'bg-slate-900 border-slate-800 text-slate-100',

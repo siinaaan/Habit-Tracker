@@ -174,4 +174,33 @@ export type NavigationTab =
   | 'learning'
   | 'milestones'
   | 'pomodoro'
+  | 'expenses'
   | 'settings';
+
+export type ExpenseType = 'income' | 'expense';
+
+export type ExpenseCategory =
+  | 'Salary'
+  | 'Freelance'
+  | 'Investments'
+  | 'Food & Dining'
+  | 'Bills & Utilities'
+  | 'Shopping'
+  | 'Entertainment'
+  | 'Transportation'
+  | 'Health & Medical'
+  | 'Education'
+  | 'Other';
+
+export interface ExpenseTransaction {
+  id: string;
+  title: string;
+  amount: number;
+  type: ExpenseType;
+  category: ExpenseCategory | string;
+  date: string; // ISO format YYYY-MM-DD
+  note?: string;
+  createdDate: string;
+  updatedDate: string;
+}
+

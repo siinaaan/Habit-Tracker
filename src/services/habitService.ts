@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from './supabase';
-import type { Habit, HabitLog, Challenge, TaskItem } from '../types';
+import type { Habit, HabitLog, Challenge, TaskItem, ExpenseTransaction } from '../types';
 import { DEFAULT_HABITS } from '../constants/defaultHabits';
 import { generateDemoDailyData } from '../constants/initialDemoData';
 import { StorageService } from './storage';
@@ -8,7 +8,7 @@ export type SyncState = 'synced' | 'syncing' | 'offline' | 'error';
 
 export interface PendingSyncItem {
   id: string;
-  table: 'habits' | 'habit_completions' | 'challenge_progress' | 'tasks';
+  table: 'habits' | 'habit_completions' | 'challenge_progress' | 'tasks' | 'expenses';
   action: 'INSERT' | 'UPDATE' | 'DELETE';
   payload: any;
   userId?: string;
@@ -20,6 +20,7 @@ const STORAGE_KEYS = {
   COMPLETIONS: 'life_upgrade_completions_cache',
   CHALLENGE: 'life_upgrade_challenge_cache',
   TASKS: 'life_upgrade_tasks_cache',
+  EXPENSES: 'life_upgrade_expenses_cache',
   PENDING_SYNC: 'life_upgrade_pending_sync_queue',
 };
 
@@ -195,6 +196,12 @@ class HabitService {
       if (tasksData && tasksData.length > 0) {
         setLocalCache(STORAGE_KEYS.TASKS, tasksData.map(this.mapDbToTask));
       }
+
+      // Sync Expenses
+      const { data: expensesData } = await supabase.from('expenses').select('*');
+      if (expensesData && expensesData.length > 0) {
+        setLocalCache(STORAGE_KEYS.EXPENSES, expensesData.map(this.mapDbToExpense));
+      }
     } catch (err) {
       console.warn('Could not refresh remote cache from Supabase:', err);
     }
@@ -232,6 +239,36 @@ class HabitService {
       completed: t.completed,
       created_at: t.createdDate,
       updated_at: t.updatedDate,
+    };
+    if (userId) payload.user_id = userId;
+    return payload;
+  }
+
+  private mapDbToExpense(row: any): ExpenseTransaction {
+    return {
+      id: row.id,
+      title: row.title || '',
+      amount: Number(row.amount ?? 0),
+      type: row.type || 'expense',
+      category: row.category || 'Other',
+      date: row.date || new Date().toISOString().split('T')[0],
+      note: row.note || '',
+      createdDate: row.created_at || row.createdDate || new Date().toISOString(),
+      updatedDate: row.updated_at || row.updatedDate || new Date().toISOString(),
+    };
+  }
+
+  private mapExpenseToDb(e: ExpenseTransaction, userId?: string): any {
+    const payload: any = {
+      id: e.id,
+      title: e.title,
+      amount: e.amount,
+      type: e.type,
+      category: e.category,
+      date: e.date,
+      note: e.note || null,
+      created_at: e.createdDate,
+      updated_at: e.updatedDate,
     };
     if (userId) payload.user_id = userId;
     return payload;
@@ -941,11 +978,169 @@ class HabitService {
     }
   }
 
+  // ==========================================
+  // 5. EXPENSES CRUD
+  // ==========================================
+  public async getExpenses(): Promise<ExpenseTransaction[]> {
+    let localExpenses = getLocalCache<ExpenseTransaction[]>(STORAGE_KEYS.EXPENSES, []);
+    if (!localExpenses.length) {
+      localExpenses = StorageService.getExpenses();
+      if (localExpenses.length > 0) {
+        setLocalCache(STORAGE_KEYS.EXPENSES, localExpenses);
+      }
+    }
+
+    if (navigator.onLine && isSupabaseConfigured()) {
+      try {
+        const { data, error } = await supabase.from('expenses').select('*').order('date', { ascending: false });
+        if (!error && data) {
+          const remoteExpenses = data.map(this.mapDbToExpense);
+          setLocalCache(STORAGE_KEYS.EXPENSES, remoteExpenses);
+          this.setSyncState('synced');
+          return remoteExpenses;
+        }
+      } catch (err) {
+        console.warn('Supabase fetch expenses failed, using local cache:', err);
+        this.setSyncState('error');
+      }
+    }
+
+    return localExpenses;
+  }
+
+  public async createExpense(expense: ExpenseTransaction): Promise<{ expense: ExpenseTransaction; synced: boolean; error?: string }> {
+    const list = getLocalCache<ExpenseTransaction[]>(STORAGE_KEYS.EXPENSES, []);
+    const updated = [expense, ...list.filter((e) => e.id !== expense.id)];
+    setLocalCache(STORAGE_KEYS.EXPENSES, updated);
+
+    if (navigator.onLine && isSupabaseConfigured()) {
+      const userId = await this.getAuthenticatedUserId();
+      if (!userId) {
+        const payload = this.mapExpenseToDb(expense);
+        this.enqueuePending({ id: expense.id, table: 'expenses', action: 'INSERT', payload });
+        this.setSyncState('offline');
+        return { expense, synced: false, error: 'No active session' };
+      }
+
+      const payload = this.mapExpenseToDb(expense, userId);
+      try {
+        this.setSyncState('syncing');
+        const { data, error } = await supabase.from('expenses').insert(payload).select().single();
+        if (error || !data) {
+          const errMsg = error?.message || 'Row verification failed (no data returned)';
+          console.warn('Supabase createExpense error:', errMsg);
+          this.enqueuePending({ id: expense.id, table: 'expenses', action: 'INSERT', payload, userId });
+          this.setSyncState('error');
+          return { expense, synced: false, error: errMsg };
+        } else {
+          this.setSyncState('synced');
+          return { expense, synced: true };
+        }
+      } catch (err: any) {
+        this.enqueuePending({ id: expense.id, table: 'expenses', action: 'INSERT', payload, userId });
+        this.setSyncState('error');
+        return { expense, synced: false, error: err.message || 'Network error' };
+      }
+    } else {
+      const payload = this.mapExpenseToDb(expense);
+      this.enqueuePending({ id: expense.id, table: 'expenses', action: 'INSERT', payload });
+      this.setSyncState('offline');
+      return { expense, synced: false };
+    }
+  }
+
+  public async updateExpense(id: string, updates: Partial<ExpenseTransaction>): Promise<{ expense: ExpenseTransaction | null; synced: boolean; error?: string }> {
+    const list = getLocalCache<ExpenseTransaction[]>(STORAGE_KEYS.EXPENSES, []);
+    const existing = list.find((e) => e.id === id);
+    if (!existing) return { expense: null, synced: false, error: 'Expense transaction not found' };
+
+    const updatedExpense: ExpenseTransaction = {
+      ...existing,
+      ...updates,
+      updatedDate: new Date().toISOString(),
+    };
+
+    const newList = list.map((e) => (e.id === id ? updatedExpense : e));
+    setLocalCache(STORAGE_KEYS.EXPENSES, newList);
+
+    if (navigator.onLine && isSupabaseConfigured()) {
+      const userId = await this.getAuthenticatedUserId();
+      if (!userId) {
+        const payload = this.mapExpenseToDb(updatedExpense);
+        this.enqueuePending({ id, table: 'expenses', action: 'UPDATE', payload });
+        this.setSyncState('offline');
+        return { expense: updatedExpense, synced: false, error: 'No active session' };
+      }
+
+      const payload = this.mapExpenseToDb(updatedExpense, userId);
+      try {
+        this.setSyncState('syncing');
+        const { data, error } = await supabase.from('expenses').upsert(payload).select().single();
+        if (error || !data) {
+          const errMsg = error?.message || 'Row verification failed (no data returned)';
+          console.warn('Supabase updateExpense error:', errMsg);
+          this.enqueuePending({ id, table: 'expenses', action: 'UPDATE', payload, userId });
+          this.setSyncState('error');
+          return { expense: updatedExpense, synced: false, error: errMsg };
+        } else {
+          this.setSyncState('synced');
+          return { expense: updatedExpense, synced: true };
+        }
+      } catch (err: any) {
+        this.enqueuePending({ id, table: 'expenses', action: 'UPDATE', payload, userId });
+        this.setSyncState('error');
+        return { expense: updatedExpense, synced: false, error: err.message || 'Network error' };
+      }
+    } else {
+      const payload = this.mapExpenseToDb(updatedExpense);
+      this.enqueuePending({ id, table: 'expenses', action: 'UPDATE', payload });
+      this.setSyncState('offline');
+      return { expense: updatedExpense, synced: false };
+    }
+  }
+
+  public async deleteExpense(id: string): Promise<{ success: boolean; synced: boolean; error?: string }> {
+    const list = getLocalCache<ExpenseTransaction[]>(STORAGE_KEYS.EXPENSES, []);
+    const filtered = list.filter((e) => e.id !== id);
+    setLocalCache(STORAGE_KEYS.EXPENSES, filtered);
+
+    if (navigator.onLine && isSupabaseConfigured()) {
+      const userId = await this.getAuthenticatedUserId();
+      if (!userId) {
+        this.enqueuePending({ id, table: 'expenses', action: 'DELETE', payload: null });
+        this.setSyncState('offline');
+        return { success: true, synced: false, error: 'No active session' };
+      }
+
+      try {
+        this.setSyncState('syncing');
+        const { error } = await supabase.from('expenses').delete().eq('id', id);
+        if (error) {
+          this.enqueuePending({ id, table: 'expenses', action: 'DELETE', payload: null, userId });
+          this.setSyncState('error');
+          return { success: true, synced: false, error: error.message };
+        } else {
+          this.setSyncState('synced');
+          return { success: true, synced: true };
+        }
+      } catch (err: any) {
+        this.enqueuePending({ id, table: 'expenses', action: 'DELETE', payload: null, userId });
+        this.setSyncState('error');
+        return { success: true, synced: false, error: err.message || 'Network error' };
+      }
+    } else {
+      this.enqueuePending({ id, table: 'expenses', action: 'DELETE', payload: null });
+      this.setSyncState('offline');
+      return { success: true, synced: false };
+    }
+  }
+
   public clearCache(): void {
     localStorage.removeItem(STORAGE_KEYS.HABITS);
     localStorage.removeItem(STORAGE_KEYS.COMPLETIONS);
     localStorage.removeItem(STORAGE_KEYS.CHALLENGE);
     localStorage.removeItem(STORAGE_KEYS.TASKS);
+    localStorage.removeItem(STORAGE_KEYS.EXPENSES);
     localStorage.removeItem(STORAGE_KEYS.PENDING_SYNC);
   }
 }

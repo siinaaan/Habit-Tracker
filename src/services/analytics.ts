@@ -128,7 +128,11 @@ export class AnalyticsService {
 
     let total = 0;
     habitLogs.forEach((l) => {
-      total += l.numericValue ?? l.duration ?? 0;
+      if (l.numericValue !== null) {
+        total += l.numericValue;
+      } else if (l.duration !== null) {
+        total += l.duration / 60;
+      }
     });
 
     return parseFloat((total / habitLogs.length).toFixed(1));

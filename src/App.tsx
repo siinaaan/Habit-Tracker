@@ -19,6 +19,7 @@ import { ReflectionsView } from './views/ReflectionsView';
 import { LearningView } from './views/LearningView';
 import { MilestonesView } from './components/milestones/MilestonesView';
 import { PomodoroTimer } from './components/pomodoro/PomodoroTimer';
+import { ExpensesView } from './views/ExpensesView';
 import { SettingsView } from './views/SettingsView';
 import { Flame } from 'lucide-react';
 
@@ -26,9 +27,10 @@ const MainContent: React.FC = () => {
   const { activeTab } = useApp();
 
   return (
-    <main className="flex-1 p-4 md:p-8 max-w-7xl w-full mx-auto pb-24 md:pb-12">
+    <main className="flex-1 px-3 py-4 sm:p-5 md:p-8 max-w-7xl w-full mx-auto pb-24 md:pb-12">
       {activeTab === 'dashboard' && <DashboardView />}
       {activeTab === 'daily' && <DailyTrackerView />}
+      {activeTab === 'expenses' && <ExpensesView />}
       {activeTab === 'analytics' && <AnalyticsCharts />}
       {activeTab === 'calendar' && <CalendarGrid />}
       {activeTab === 'weekly' && <WeeklyReportView />}

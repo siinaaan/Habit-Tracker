@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import type { NavigationTab } from '../../types';
-import { Search, X, CheckSquare, Target, BookOpen, GraduationCap, Trophy, Flame } from 'lucide-react';
+import { Search, X, CheckSquare, Target, BookOpen, GraduationCap, Trophy, Flame, Wallet } from 'lucide-react';
 import { clsx } from 'clsx';
 
 interface SearchResultItem {
   id: string;
-  type: 'Habit' | 'Task' | 'Goal' | 'Reflection' | 'Learning' | 'Milestone';
+  type: 'Habit' | 'Task' | 'Goal' | 'Reflection' | 'Learning' | 'Milestone' | 'Expense';
   title: string;
   subtitle: string;
   targetTab: NavigationTab;
@@ -22,6 +22,7 @@ export const GlobalSearch: React.FC = () => {
     goals,
     reflections,
     learningItems,
+    expenses,
     setActiveTab,
     setSelectedDate,
   } = useApp();
@@ -172,6 +173,26 @@ export const GlobalSearch: React.FC = () => {
           targetTab: 'milestones',
           badgeColor: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30',
           icon: <Trophy className="w-4 h-4 text-yellow-400" />,
+        });
+      }
+    });
+
+    // 7. Expenses
+    expenses.forEach((e) => {
+      if (
+        e.title.toLowerCase().includes(cleanQuery) ||
+        e.category.toLowerCase().includes(cleanQuery) ||
+        (e.note && e.note.toLowerCase().includes(cleanQuery)) ||
+        e.amount.toString().includes(cleanQuery)
+      ) {
+        results.push({
+          id: `e-${e.id}`,
+          type: 'Expense',
+          title: `${e.type === 'income' ? '+' : '-'}\$${e.amount.toFixed(2)} - ${e.title}`,
+          subtitle: `${e.category} • ${e.date}${e.note ? ` • ${e.note}` : ''}`,
+          targetTab: 'expenses',
+          badgeColor: e.type === 'income' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-rose-500/10 text-rose-400 border-rose-500/30',
+          icon: <Wallet className="w-4 h-4 text-emerald-400" />,
         });
       }
     });

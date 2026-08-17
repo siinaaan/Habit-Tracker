@@ -99,21 +99,21 @@ export const generateDemoDailyData = (): {
         numericValue = idx % 2 === 0 ? 2 : 3;
         completed = numericValue >= habit.target;
       } else if (habit.id === 'habit-coding') {
-        duration = 180 + (idx % 3) * 15;
-        completed = duration >= habit.target;
+        duration = (180 + (idx % 3) * 15) * 60;
+        completed = duration >= habit.target * 60;
       } else if (habit.id === 'habit-pomodoro') {
         numericValue = 4 + (idx % 2);
         completed = numericValue >= habit.target;
       } else if (habit.id === 'habit-discipline') {
         completed = idx !== 3; // missed day 4
       } else if (habit.id === 'habit-workout') {
-        duration = 45;
+        duration = 45 * 60;
         completed = true;
       } else if (habit.id === 'habit-water') {
         numericValue = 2.8;
         completed = true;
       } else if (habit.id === 'habit-meditation') {
-        duration = 15;
+        duration = 15 * 60;
         completed = true;
       } else if (habit.id === 'habit-scroll') {
         completed = true;
