@@ -176,6 +176,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     refreshAllState();
+
+    habitService.setRemoteChangeCallback(() => {
+      refreshAllState();
+    });
+
+    const handleFocus = () => {
+      if (navigator.onLine) {
+        refreshAllState();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      habitService.setRemoteChangeCallback(null);
+    };
   }, []);
 
   // Theme application

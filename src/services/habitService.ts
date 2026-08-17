@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from './supabase';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import type { Habit, HabitLog, Challenge, TaskItem, ExpenseTransaction } from '../types';
 import { DEFAULT_HABITS } from '../constants/defaultHabits';
 import { generateDemoDailyData } from '../constants/initialDemoData';
@@ -47,6 +48,9 @@ class HabitService {
   private syncState: SyncState = navigator.onLine ? 'synced' : 'offline';
   private syncListeners: ((state: SyncState) => void)[] = [];
   private isSyncing = false;
+  private realtimeChannel: RealtimeChannel | null = null;
+  private onRemoteChangeCallback: (() => void) | null = null;
+  private remoteChangeDebounceTimer: any = null;
 
   constructor() {
     // Register network status listeners
@@ -58,6 +62,83 @@ class HabitService {
       window.addEventListener('offline', () => {
         this.setSyncState('offline');
       });
+    }
+  }
+
+  // --- Realtime Subscriptions ---
+  public setRemoteChangeCallback(callback: (() => void) | null): void {
+    this.onRemoteChangeCallback = callback;
+  }
+
+  private triggerRemoteChangeCallback(): void {
+    if (!this.onRemoteChangeCallback) return;
+    if (this.remoteChangeDebounceTimer) {
+      clearTimeout(this.remoteChangeDebounceTimer);
+    }
+    this.remoteChangeDebounceTimer = setTimeout(() => {
+      if (this.onRemoteChangeCallback) {
+        this.onRemoteChangeCallback();
+      }
+    }, 150);
+  }
+
+  public async setupRealtimeSubscriptions(userId: string): Promise<void> {
+    if (!isSupabaseConfigured() || !userId) return;
+
+    this.unsubscribeRealtime();
+
+    try {
+      const channelName = `realtime_user_${userId}`;
+      this.realtimeChannel = supabase
+        .channel(channelName)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'habits', filter: `user_id=eq.${userId}` },
+          (payload) => {
+            console.log('Realtime habits mutation:', payload.eventType);
+            this.triggerRemoteChangeCallback();
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'habit_completions', filter: `user_id=eq.${userId}` },
+          (payload) => {
+            console.log('Realtime habit_completions mutation:', payload.eventType);
+            this.triggerRemoteChangeCallback();
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'tasks', filter: `user_id=eq.${userId}` },
+          (payload) => {
+            console.log('Realtime tasks mutation:', payload.eventType);
+            this.triggerRemoteChangeCallback();
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'expenses', filter: `user_id=eq.${userId}` },
+          (payload) => {
+            console.log('Realtime expenses mutation:', payload.eventType);
+            this.triggerRemoteChangeCallback();
+          }
+        )
+        .subscribe((status, err) => {
+          if (status === 'SUBSCRIBED') {
+            console.log(`Supabase Realtime connected successfully for user: ${userId}`);
+          } else if (err) {
+            console.warn(`Supabase Realtime subscription status [${status}]:`, err);
+          }
+        });
+    } catch (err) {
+      console.warn('Error setting up Supabase Realtime subscriptions:', err);
+    }
+  }
+
+  public unsubscribeRealtime(): void {
+    if (this.realtimeChannel) {
+      supabase.removeChannel(this.realtimeChannel);
+      this.realtimeChannel = null;
     }
   }
 
@@ -1186,6 +1267,7 @@ class HabitService {
   }
 
   public clearCache(): void {
+    this.unsubscribeRealtime();
     localStorage.removeItem(STORAGE_KEYS.HABITS);
     localStorage.removeItem(STORAGE_KEYS.COMPLETIONS);
     localStorage.removeItem(STORAGE_KEYS.CHALLENGE);

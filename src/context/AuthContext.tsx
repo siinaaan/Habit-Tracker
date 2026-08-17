@@ -35,6 +35,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (mounted) {
           setSession(initialSession);
           setUser(initialSession?.user ?? null);
+          if (initialSession?.user?.id) {
+            habitService.setupRealtimeSubscriptions(initialSession.user.id);
+          }
         }
       } catch (err) {
         console.error('Failed to initialize Supabase Auth session:', err);
@@ -50,8 +53,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Listen to Auth State Changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
       if (event === 'SIGNED_OUT') {
+        habitService.unsubscribeRealtime();
         StorageService.clearAllData();
         habitService.clearCache();
+      } else if (currentSession?.user?.id) {
+        habitService.setupRealtimeSubscriptions(currentSession.user.id);
       }
       if (mounted) {
         setSession(currentSession);
@@ -63,6 +69,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       mounted = false;
       subscription.unsubscribe();
+      habitService.unsubscribeRealtime();
     };
   }, []);
 

@@ -159,3 +159,12 @@ TO authenticated
 USING (auth.uid() = user_id)
 WITH CHECK (auth.uid() = user_id);
 
+-- --------------------------------------------------------------------
+-- STEP 6: ENABLE SUPABASE REALTIME FOR TABLES
+-- --------------------------------------------------------------------
+ALTER PUBLICATION supabase_realtime ADD TABLE public.habits;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.habit_completions;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.tasks;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.expenses;
+
+
