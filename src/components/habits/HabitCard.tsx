@@ -195,172 +195,195 @@ export const HabitCard: React.FC<HabitCardProps> = ({
       </div>
 
       {/* Right: Dynamic Interactive Control */}
-      <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800/60 shrink-0">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between sm:justify-end gap-2.5 sm:gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800/60 shrink-0 w-full sm:w-auto">
         {/* TIME-BASED HABITS LIVE TIMER SYSTEM */}
-        {isTimeBased && (
-          <div className="flex items-center gap-2">
-            {!isTimerRunning ? (
+        {isTimeBased ? (
+          <div className="flex flex-col gap-2.5 w-full sm:w-auto sm:flex-row sm:items-center sm:gap-3">
+            {/* Action Row 1: Start/Stop Timer + Live Ticker / Duration Input */}
+            <div className="flex items-center justify-between sm:justify-start gap-2 w-full sm:w-auto">
+              <div className="flex items-center gap-2">
+                {!isTimerRunning ? (
+                  <button
+                    onClick={handleStartTimer}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-purple-600 hover:bg-purple-500 text-white border border-purple-500 shadow-md shadow-purple-600/30 transition-all cursor-pointer shrink-0 min-h-[38px]"
+                    title="Start Live Timer"
+                  >
+                    <Play className="w-3.5 h-3.5 fill-current" />
+                    <span>Start</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleStopTimer}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-rose-600 hover:bg-rose-500 text-white border border-rose-500 shadow-md shadow-rose-600/30 transition-all cursor-pointer animate-pulse shrink-0 min-h-[38px]"
+                    title="Stop & Save Elapsed Time"
+                  >
+                    <Square className="w-3.5 h-3.5 fill-current" />
+                    <span>Stop</span>
+                  </button>
+                )}
+
+                {isTimerRunning && (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-purple-500/10 border border-purple-500/30 text-purple-300 font-mono font-bold text-xs shrink-0 min-h-[38px]">
+                    <span className="w-2 h-2 rounded-full bg-purple-400 animate-ping" />
+                    <span>{formatSeconds(timerSeconds)}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* DURATION TYPE MANUAL INPUT BOX */}
+              {habit.type === 'duration' && (
+                <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 focus-within:border-indigo-500 transition-colors shrink-0">
+                  <Clock className="w-3.5 h-3.5 text-purple-400 mr-1.5 shrink-0" />
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={log?.duration ? (log.duration / 60).toFixed(1).replace(/\.0$/, '') : ''}
+                    onChange={(e) => handleDurationChange(parseFloat(e.target.value) || 0)}
+                    placeholder="0"
+                    className="w-14 sm:w-16 bg-transparent text-sm font-bold text-white outline-none"
+                  />
+                  <span className="text-xs text-slate-400 font-semibold ml-1">mins</span>
+                </div>
+              )}
+
+              {/* TIME TYPE MANUAL TIME INPUT PICKER */}
+              {habit.type === 'time' && (
+                <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 focus-within:border-indigo-500 transition-colors shrink-0">
+                  <Clock className="w-3.5 h-3.5 text-amber-400 mr-1.5 shrink-0" />
+                  <input
+                    type="time"
+                    value={log?.timeValue ?? ''}
+                    onChange={(e) => handleTimeChange(e.target.value)}
+                    className="bg-transparent text-xs font-bold text-white outline-none cursor-pointer"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Action Row 2: Complete Button + Edit & Delete Buttons */}
+            <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800/60">
               <button
-                onClick={handleStartTimer}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-purple-600 hover:bg-purple-500 text-white border border-purple-500 shadow-md shadow-purple-600/30 transition-all cursor-pointer shrink-0"
-                title="Start Live Timer"
+                onClick={handleCheckboxToggle}
+                className={clsx(
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer border min-h-[38px]',
+                  isCompleted
+                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                    : 'bg-slate-800 text-slate-300 border-slate-700 hover:text-white'
+                )}
+                title="Toggle completion status"
               >
-                <Play className="w-3.5 h-3.5 fill-current" />
-                <span>Start</span>
+                <div
+                  className={clsx(
+                    'w-4 h-4 rounded-md border flex items-center justify-center transition-colors',
+                    isCompleted ? 'bg-emerald-400 border-emerald-400 text-slate-950' : 'border-slate-500 bg-transparent'
+                  )}
+                >
+                  {isCompleted && <Check className="w-3 h-3 stroke-[3]" />}
+                </div>
+                <span>{isCompleted ? 'Completed' : 'Check In'}</span>
               </button>
-            ) : (
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  onClick={() => openAddHabitModal(habit)}
+                  className="p-2 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 cursor-pointer transition-colors min-h-[38px] min-w-[38px] flex items-center justify-center"
+                  title="Edit habit"
+                  aria-label="Edit habit"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => setIsConfirmDeleteOpen(true)}
+                  className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 cursor-pointer transition-colors min-h-[38px] min-w-[38px] flex items-center justify-center"
+                  title="Delete habit"
+                  aria-label="Delete habit"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* FOR NON-TIME-BASED HABITS (checkbox, number) */
+          <div className="flex items-center justify-between sm:justify-end gap-2.5 w-full sm:w-auto">
+            {/* CHECKBOX TYPE */}
+            {habit.type === 'checkbox' && (
               <button
-                onClick={handleStopTimer}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-rose-600 hover:bg-rose-500 text-white border border-rose-500 shadow-md shadow-rose-600/30 transition-all cursor-pointer animate-pulse shrink-0"
-                title="Stop & Save Elapsed Time"
+                onClick={handleCheckboxToggle}
+                className={clsx(
+                  'flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer border min-h-[38px]',
+                  isCompleted
+                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500 shadow-md shadow-emerald-600/30'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                )}
               >
-                <Square className="w-3.5 h-3.5 fill-current" />
-                <span>Stop</span>
+                <div
+                  className={clsx(
+                    'w-4 h-4 rounded-md border flex items-center justify-center transition-colors',
+                    isCompleted
+                      ? 'bg-white border-white text-emerald-600'
+                      : 'border-slate-500 bg-transparent'
+                  )}
+                >
+                  {isCompleted && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                </div>
+                <span>{isCompleted ? 'Completed' : 'Check In'}</span>
               </button>
             )}
 
-            {isTimerRunning && (
-              <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-purple-500/10 border border-purple-500/30 text-purple-300 font-mono font-bold text-xs shrink-0">
-                <span className="w-2 h-2 rounded-full bg-purple-400 animate-ping" />
-                <span>{formatSeconds(timerSeconds)}</span>
+            {/* NUMBER TYPE */}
+            {habit.type === 'number' && (
+              <div className="flex items-center gap-2">
+                <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 focus-within:border-indigo-500 transition-colors">
+                  <Hash className="w-3.5 h-3.5 text-indigo-400 mr-1.5 shrink-0" />
+                  <input
+                    type="number"
+                    step={habit.unit === 'L' ? '0.1' : '1'}
+                    min="0"
+                    value={log?.numericValue ?? ''}
+                    onChange={(e) => handleNumberChange(parseFloat(e.target.value) || 0)}
+                    placeholder="0"
+                    className="w-14 sm:w-16 bg-transparent text-sm font-bold text-white outline-none"
+                  />
+                  <span className="text-xs text-slate-400 font-semibold ml-1">{habit.unit}</span>
+                </div>
+                <button
+                  onClick={handleCheckboxToggle}
+                  className={clsx(
+                    'p-2 rounded-xl border transition-colors cursor-pointer min-h-[38px] min-w-[38px] flex items-center justify-center',
+                    isCompleted
+                      ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                      : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+                  )}
+                  title="Toggle status"
+                >
+                  <CheckSquare className="w-4 h-4" />
+                </button>
               </div>
             )}
+
+            {/* Edit & Delete Action Buttons */}
+            <div className="flex items-center gap-1.5 border-l border-slate-800/80 pl-2 shrink-0">
+              <button
+                onClick={() => openAddHabitModal(habit)}
+                className="p-2 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 cursor-pointer transition-colors min-h-[38px] min-w-[38px] flex items-center justify-center"
+                title="Edit habit"
+                aria-label="Edit habit"
+              >
+                <Edit2 className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => setIsConfirmDeleteOpen(true)}
+                className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 cursor-pointer transition-colors min-h-[38px] min-w-[38px] flex items-center justify-center"
+                title="Delete habit"
+                aria-label="Delete habit"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         )}
-
-        {/* CHECKBOX TYPE */}
-        {habit.type === 'checkbox' && (
-          <button
-            onClick={handleCheckboxToggle}
-            className={clsx(
-              'flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer border',
-              isCompleted
-                ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500 shadow-md shadow-emerald-600/30'
-                : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
-            )}
-          >
-            <div
-              className={clsx(
-                'w-4 h-4 rounded-md border flex items-center justify-center transition-colors',
-                isCompleted
-                  ? 'bg-white border-white text-emerald-600'
-                  : 'border-slate-500 bg-transparent'
-              )}
-            >
-              {isCompleted && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-            </div>
-            <span>{isCompleted ? 'Completed' : 'Check In'}</span>
-          </button>
-        )}
-
-        {/* NUMBER TYPE */}
-        {habit.type === 'number' && (
-          <div className="flex items-center gap-2">
-            <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 focus-within:border-indigo-500 transition-colors">
-              <Hash className="w-3.5 h-3.5 text-indigo-400 mr-1.5 shrink-0" />
-              <input
-                type="number"
-                step={habit.unit === 'L' ? '0.1' : '1'}
-                min="0"
-                value={log?.numericValue ?? ''}
-                onChange={(e) => handleNumberChange(parseFloat(e.target.value) || 0)}
-                placeholder="0"
-                className="w-16 bg-transparent text-sm font-bold text-white outline-none"
-              />
-              <span className="text-xs text-slate-400 font-semibold ml-1">{habit.unit}</span>
-            </div>
-            <button
-              onClick={handleCheckboxToggle}
-              className={clsx(
-                'p-2 rounded-xl border transition-colors cursor-pointer',
-                isCompleted
-                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
-                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
-              )}
-              title="Toggle status"
-            >
-              <CheckSquare className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-
-        {/* DURATION TYPE (Preserves Manual Add Time Input Box) */}
-        {habit.type === 'duration' && (
-          <div className="flex items-center gap-2">
-            <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 focus-within:border-indigo-500 transition-colors">
-              <Clock className="w-3.5 h-3.5 text-purple-400 mr-1.5 shrink-0" />
-              <input
-                type="number"
-                min="0"
-                step="any"
-                value={log?.duration ? (log.duration / 60).toFixed(1).replace(/\.0$/, '') : ''}
-                onChange={(e) => handleDurationChange(parseFloat(e.target.value) || 0)}
-                placeholder="0"
-                className="w-16 bg-transparent text-sm font-bold text-white outline-none"
-              />
-              <span className="text-xs text-slate-400 font-semibold ml-1">mins</span>
-            </div>
-            <button
-              onClick={handleCheckboxToggle}
-              className={clsx(
-                'p-2 rounded-xl border transition-colors cursor-pointer',
-                isCompleted
-                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
-                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
-              )}
-              title="Toggle status"
-            >
-              <CheckSquare className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-
-        {/* TIME TYPE (Preserves Manual Time Input Picker) */}
-        {habit.type === 'time' && (
-          <div className="flex items-center gap-2">
-            <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 focus-within:border-indigo-500 transition-colors">
-              <Clock className="w-3.5 h-3.5 text-amber-400 mr-1.5 shrink-0" />
-              <input
-                type="time"
-                value={log?.timeValue ?? ''}
-                onChange={(e) => handleTimeChange(e.target.value)}
-                className="bg-transparent text-xs font-bold text-white outline-none cursor-pointer"
-              />
-            </div>
-            <button
-              onClick={handleCheckboxToggle}
-              className={clsx(
-                'p-2 rounded-xl border transition-colors cursor-pointer',
-                isCompleted
-                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
-                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
-              )}
-              title="Toggle status"
-            >
-              <CheckSquare className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-
-        {/* Edit & Delete Action Buttons */}
-        <div className="flex items-center gap-1 border-l border-slate-800/80 pl-2">
-          <button
-            onClick={() => openAddHabitModal(habit)}
-            className="p-2 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 cursor-pointer transition-colors"
-            title="Edit habit"
-            aria-label="Edit habit"
-          >
-            <Edit2 className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={() => setIsConfirmDeleteOpen(true)}
-            className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 cursor-pointer transition-colors"
-            title="Delete habit"
-            aria-label="Delete habit"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
       </div>
 
       {/* Delete Confirmation Modal */}
