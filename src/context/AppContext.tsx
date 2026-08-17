@@ -311,18 +311,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updatedDate: new Date().toISOString(),
       };
       StorageService.saveTracker(tracker);
+      setTrackersState(StorageService.getTrackers());
     }
 
-    const currentLogs = await habitService.getHabitCompletions();
-    let existingLog = currentLogs.find(
-      (l) => (l.dailyTrackerId === tracker!.id || l.dailyTrackerId === selectedDate || l.dailyTrackerId.includes(selectedDate)) && l.habitId === habitId
+    // Synchronous local lookup to prevent race conditions on rapid clicks
+    const localLogs = StorageService.getLogs();
+    let existingLog = localLogs.find(
+      (l) =>
+        (l.dailyTrackerId === tracker!.id ||
+          l.dailyTrackerId === selectedDate ||
+          l.dailyTrackerId.includes(selectedDate)) &&
+        l.habitId === habitId
     );
 
+    const isNew = !existingLog;
     let updatedLog: HabitLog;
-    let res: { completion: HabitLog | null; synced: boolean; error?: string };
 
     if (!existingLog) {
-      existingLog = {
+      const newLog: HabitLog = {
         id: `log-${tracker.id}-${habitId}`,
         habitId,
         dailyTrackerId: tracker.id,
@@ -334,18 +340,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createdDate: new Date().toISOString(),
         updatedDate: new Date().toISOString(),
       };
-      updatedLog = { ...existingLog, ...logData, updatedDate: new Date().toISOString() };
-      res = await habitService.createCompletion(updatedLog);
+      updatedLog = { ...newLog, ...logData, updatedDate: new Date().toISOString() };
     } else {
       updatedLog = { ...existingLog, ...logData, updatedDate: new Date().toISOString() };
-      res = await habitService.updateCompletion(updatedLog.id, updatedLog);
     }
 
+    // 1. Immediately persist to localStorage & update React state optimistically
     StorageService.saveLog(updatedLog);
+    setLogsState((prev) => {
+      const idx = prev.findIndex((l) => l.id === updatedLog.id);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = updatedLog;
+        return copy;
+      }
+      return [...prev, updatedLog];
+    });
 
-    // Re-evaluate tracker completion percentage
+    // 2. Re-evaluate tracker completion percentage
     const allLogsForTracker = StorageService.getLogs().filter(
-      (l) => l.dailyTrackerId === tracker!.id || l.dailyTrackerId === selectedDate || l.dailyTrackerId.includes(selectedDate)
+      (l) =>
+        l.dailyTrackerId === tracker!.id ||
+        l.dailyTrackerId === selectedDate ||
+        l.dailyTrackerId.includes(selectedDate)
     );
 
     const activeHabits = habits.filter((h) => h.active);
@@ -361,16 +378,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     StorageService.saveTracker(updatedTracker);
-
-    // Refresh memory states
     setTrackersState(StorageService.getTrackers());
-    const latestLogs = await habitService.getHabitCompletions();
-    setLogsState(latestLogs);
 
     if (newCompletion === 100 && tracker.completionPercentage < 100) {
       triggerConfetti();
       showToast(`🔥 Boom! Day ${dayNum} 100% Completed!`, 'success');
-    } else if (res.error) {
+    }
+
+    // 3. Sync to Supabase in background
+    const res = isNew
+      ? await habitService.createCompletion(updatedLog)
+      : await habitService.updateCompletion(updatedLog.id, updatedLog);
+
+    if (res.error) {
       console.warn('Habit completion sync warning:', res.error);
     }
   };

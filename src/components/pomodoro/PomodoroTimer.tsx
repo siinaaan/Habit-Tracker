@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Card, CardTitle } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -19,31 +19,136 @@ import { clsx } from 'clsx';
 
 type PomodoroMode = 'focus' | 'shortBreak' | 'longBreak';
 
+const STORAGE_KEY = 'life_upgrade_pomodoro_timer_state';
+
+interface SavedTimerState {
+  mode: PomodoroMode;
+  isRunning: boolean;
+  endTime: number | null;
+  pausedTimeLeft: number;
+  sessionCount: number;
+}
+
 export const PomodoroTimer: React.FC = () => {
-  const { settings, updateHabitLog, triggerConfetti, showToast, logs } = useApp();
+  const { settings, updateHabitLog, triggerConfetti, showToast, logs, selectedDayLogs } = useApp();
   const pomodoroSettings = settings.pomodoroSettings;
 
-  const [mode, setMode] = useState<PomodoroMode>('focus');
-  const [timeLeft, setTimeLeft] = useState<number>(pomodoroSettings.focusDuration * 60);
-  const [isRunning, setIsRunning] = useState<boolean>(false);
-  const [sessionCount, setSessionCount] = useState<number>(0);
+  const getDurationForMode = useCallback(
+    (m: PomodoroMode): number => {
+      if (m === 'shortBreak') return pomodoroSettings.shortBreakDuration * 60;
+      if (m === 'longBreak') return pomodoroSettings.longBreakDuration * 60;
+      return pomodoroSettings.focusDuration * 60;
+    },
+    [pomodoroSettings]
+  );
+
+  // Initialize state from local storage or fallback to defaults
+  const [mode, setMode] = useState<PomodoroMode>(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed: SavedTimerState = JSON.parse(raw);
+        if (parsed && parsed.mode) return parsed.mode;
+      }
+    } catch {}
+    return 'focus';
+  });
+
+  const [isRunning, setIsRunning] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed: SavedTimerState = JSON.parse(raw);
+        if (parsed && typeof parsed.isRunning === 'boolean') {
+          if (parsed.isRunning && parsed.endTime && parsed.endTime <= Date.now()) {
+            return false;
+          }
+          return parsed.isRunning;
+        }
+      }
+    } catch {}
+    return false;
+  });
+
+  const [endTime, setEndTime] = useState<number | null>(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed: SavedTimerState = JSON.parse(raw);
+        if (parsed && parsed.endTime) {
+          if (parsed.endTime <= Date.now()) return null;
+          return parsed.endTime;
+        }
+      }
+    } catch {}
+    return null;
+  });
+
+  const [timeLeft, setTimeLeft] = useState<number>(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed: SavedTimerState = JSON.parse(raw);
+        if (parsed) {
+          if (parsed.isRunning && parsed.endTime) {
+            const rem = Math.max(0, Math.ceil((parsed.endTime - Date.now()) / 1000));
+            return rem;
+          }
+          if (typeof parsed.pausedTimeLeft === 'number' && parsed.pausedTimeLeft > 0) {
+            return parsed.pausedTimeLeft;
+          }
+        }
+      }
+    } catch {}
+    return pomodoroSettings.focusDuration * 60;
+  });
+
+  const [sessionCount, setSessionCount] = useState<number>(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed: SavedTimerState = JSON.parse(raw);
+        if (parsed && typeof parsed.sessionCount === 'number') return parsed.sessionCount;
+      }
+    } catch {}
+    return 0;
+  });
+
   const [manualCount, setManualCount] = useState<number>(1);
-
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hasNotifiedRef = useRef<boolean>(false);
 
-  // Sync mode duration whenever settings or mode change
-  useEffect(() => {
-    let durationMins = pomodoroSettings.focusDuration;
-    if (mode === 'shortBreak') durationMins = pomodoroSettings.shortBreakDuration;
-    if (mode === 'longBreak') durationMins = pomodoroSettings.longBreakDuration;
-    setTimeLeft(durationMins * 60);
-    setIsRunning(false);
-  }, [mode, pomodoroSettings]);
+  // Helper to persist timer state
+  const saveState = useCallback(
+    (
+      newMode: PomodoroMode,
+      newRunning: boolean,
+      newEndTime: number | null,
+      newTimeLeft: number,
+      newSessions: number
+    ) => {
+      try {
+        const payload: SavedTimerState = {
+          mode: newMode,
+          isRunning: newRunning,
+          endTime: newEndTime,
+          pausedTimeLeft: newTimeLeft,
+          sessionCount: newSessions,
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      } catch (err) {
+        console.error('Failed to save pomodoro timer state:', err);
+      }
+    },
+    []
+  );
 
-  // Audio chime synthesizer via Web Audio API (No external asset needed!)
+  // Audio chime synthesizer via Web Audio API
   const playChimeSound = () => {
     try {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       const ctx = new AudioCtx();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -61,75 +166,185 @@ export const PomodoroTimer: React.FC = () => {
     }
   };
 
-  // Timer Tick interval
-  useEffect(() => {
-    if (isRunning) {
-      timerRef.current = setInterval(() => {
-        setTimeLeft((prev) => {
-          if (prev <= 1) {
-            clearInterval(timerRef.current!);
-            handleTimerComplete();
-            return 0;
-          }
-          return prev - 1;
+  // Browser Desktop Notification
+  const sendBrowserNotification = (title: string, body: string) => {
+    try {
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(title, {
+          body,
+          icon: '🍅',
         });
-      }, 1000);
-    } else if (timerRef.current) {
-      clearInterval(timerRef.current);
-    }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [isRunning]);
-
-  const handleTimerComplete = () => {
-    setIsRunning(false);
-    playChimeSound();
-
-    if (mode === 'focus') {
-      const newCount = sessionCount + 1;
-      setSessionCount(newCount);
-
-      // Auto record session to habit log for pomodoro
-      const currentLog = logs.find((l) => l.habitId === 'habit-pomodoro');
-      const currentSessions = currentLog?.numericValue ?? 0;
-      updateHabitLog('habit-pomodoro', {
-        numericValue: currentSessions + 1,
-        completed: currentSessions + 1 >= 4,
-      });
-
-      triggerConfetti();
-      showToast('🎉 Focus session completed! Time for a well-deserved break.', 'success');
-
-      // Auto switch to break
-      if (newCount % pomodoroSettings.longBreakInterval === 0) {
-        setMode('longBreak');
-      } else {
-        setMode('shortBreak');
       }
-    } else {
-      showToast('☕ Break finished! Ready for the next deep work sprint?', 'info');
-      setMode('focus');
+    } catch {
+      // Fallback silently if notification construction fails
     }
   };
 
-  const toggleStart = () => setIsRunning(!isRunning);
+  // Handle Session Completion
+  const handleTimerComplete = useCallback(
+    (currentMode: PomodoroMode, currentSessions: number) => {
+      if (hasNotifiedRef.current) return;
+      hasNotifiedRef.current = true;
+
+      setIsRunning(false);
+      setEndTime(null);
+      playChimeSound();
+
+      if (currentMode === 'focus') {
+        const newCount = currentSessions + 1;
+        setSessionCount(newCount);
+
+        // Auto record session to habit log for today
+        const todayLog = selectedDayLogs.find((l) => l.habitId === 'habit-pomodoro');
+        const existingSessions = todayLog?.numericValue ?? 0;
+        const updatedTotal = existingSessions + 1;
+
+        updateHabitLog('habit-pomodoro', {
+          numericValue: updatedTotal,
+          completed: updatedTotal >= 4,
+        });
+
+        triggerConfetti();
+        showToast('🎉 Focus session completed! Time for a well-deserved break.', 'success');
+        sendBrowserNotification(
+          'Pomodoro session complete!',
+          'Great job! Time for a well-deserved break.'
+        );
+
+        // Auto switch to break
+        const nextMode: PomodoroMode =
+          newCount % pomodoroSettings.longBreakInterval === 0 ? 'longBreak' : 'shortBreak';
+        const nextDuration = getDurationForMode(nextMode);
+
+        setMode(nextMode);
+        setTimeLeft(nextDuration);
+        saveState(nextMode, false, null, nextDuration, newCount);
+      } else {
+        showToast('☕ Break finished! Ready for the next deep work sprint?', 'info');
+        sendBrowserNotification('Break time is over!', 'Ready for your next deep focus sprint?');
+
+        const nextMode: PomodoroMode = 'focus';
+        const nextDuration = getDurationForMode(nextMode);
+
+        setMode(nextMode);
+        setTimeLeft(nextDuration);
+        saveState(nextMode, false, null, nextDuration, currentSessions);
+      }
+    },
+    [
+      selectedDayLogs,
+      updateHabitLog,
+      triggerConfetti,
+      showToast,
+      pomodoroSettings.longBreakInterval,
+      getDurationForMode,
+      saveState,
+    ]
+  );
+
+  // Timer Tick Function
+  const checkAndUpdateTimer = useCallback(() => {
+    if (!isRunning || !endTime) return;
+
+    const now = Date.now();
+    const remaining = Math.max(0, Math.ceil((endTime - now) / 1000));
+    setTimeLeft(remaining);
+    saveState(mode, true, endTime, remaining, sessionCount);
+
+    if (remaining <= 0) {
+      if (timerRef.current) clearInterval(timerRef.current);
+      handleTimerComplete(mode, sessionCount);
+    }
+  }, [isRunning, endTime, mode, sessionCount, saveState, handleTimerComplete]);
+
+  // Main Timer Tick Interval + Page Visibility Catchup
+  useEffect(() => {
+    if (isRunning && endTime) {
+      hasNotifiedRef.current = false;
+      checkAndUpdateTimer();
+
+      timerRef.current = setInterval(() => {
+        checkAndUpdateTimer();
+      }, 500);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+
+    const handleVisibilityOrFocusChange = () => {
+      if (document.visibilityState === 'visible' || document.hasFocus()) {
+        checkAndUpdateTimer();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityOrFocusChange);
+    window.addEventListener('focus', handleVisibilityOrFocusChange);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocusChange);
+      window.removeEventListener('focus', handleVisibilityOrFocusChange);
+    };
+  }, [isRunning, endTime, checkAndUpdateTimer]);
+
+  // Actions
+  const toggleStart = () => {
+    if (!isRunning) {
+      // Request Notification Permission on user click if default
+      if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission().catch(() => {});
+      }
+
+      const durationSecs = timeLeft > 0 ? timeLeft : getDurationForMode(mode);
+      const newEndTime = Date.now() + durationSecs * 1000;
+
+      hasNotifiedRef.current = false;
+      setTimeLeft(durationSecs);
+      setEndTime(newEndTime);
+      setIsRunning(true);
+      saveState(mode, true, newEndTime, durationSecs, sessionCount);
+    } else {
+      // Pause
+      const remaining = endTime ? Math.max(0, Math.ceil((endTime - Date.now()) / 1000)) : timeLeft;
+      setIsRunning(false);
+      setEndTime(null);
+      setTimeLeft(remaining);
+      saveState(mode, false, null, remaining, sessionCount);
+    }
+  };
 
   const resetTimer = () => {
     setIsRunning(false);
-    let durationMins = pomodoroSettings.focusDuration;
-    if (mode === 'shortBreak') durationMins = pomodoroSettings.shortBreakDuration;
-    if (mode === 'longBreak') durationMins = pomodoroSettings.longBreakDuration;
-    setTimeLeft(durationMins * 60);
+    setEndTime(null);
+    hasNotifiedRef.current = false;
+    const durationSecs = getDurationForMode(mode);
+    setTimeLeft(durationSecs);
+    saveState(mode, false, null, durationSecs, sessionCount);
   };
 
   const skipTimer = () => {
     setIsRunning(false);
-    if (mode === 'focus') {
-      setMode('shortBreak');
-    } else {
-      setMode('focus');
-    }
+    setEndTime(null);
+    hasNotifiedRef.current = false;
+
+    const nextMode: PomodoroMode = mode === 'focus' ? 'shortBreak' : 'focus';
+    const durationSecs = getDurationForMode(nextMode);
+
+    setMode(nextMode);
+    setTimeLeft(durationSecs);
+    saveState(nextMode, false, null, durationSecs, sessionCount);
+  };
+
+  const switchMode = (newMode: PomodoroMode) => {
+    if (mode === newMode && isRunning) return;
+
+    setIsRunning(false);
+    setEndTime(null);
+    hasNotifiedRef.current = false;
+
+    const durationSecs = getDurationForMode(newMode);
+    setMode(newMode);
+    setTimeLeft(durationSecs);
+    saveState(newMode, false, null, durationSecs, sessionCount);
   };
 
   const handleDecreaseManual = () => {
@@ -142,8 +357,8 @@ export const PomodoroTimer: React.FC = () => {
 
   const handleManualAdd = () => {
     if (manualCount <= 0) return;
-    const currentLog = logs.find((l) => l.habitId === 'habit-pomodoro');
-    const currentSessions = currentLog?.numericValue ?? 0;
+    const todayLog = selectedDayLogs.find((l) => l.habitId === 'habit-pomodoro');
+    const currentSessions = todayLog?.numericValue ?? 0;
     const updatedCount = currentSessions + manualCount;
 
     updateHabitLog('habit-pomodoro', {
@@ -156,8 +371,8 @@ export const PomodoroTimer: React.FC = () => {
 
   const handleManualSubtract = () => {
     if (manualCount <= 0) return;
-    const currentLog = logs.find((l) => l.habitId === 'habit-pomodoro');
-    const currentSessions = currentLog?.numericValue ?? 0;
+    const todayLog = selectedDayLogs.find((l) => l.habitId === 'habit-pomodoro');
+    const currentSessions = todayLog?.numericValue ?? 0;
     const updatedCount = Math.max(0, currentSessions - manualCount);
 
     updateHabitLog('habit-pomodoro', {
@@ -180,9 +395,8 @@ export const PomodoroTimer: React.FC = () => {
     .filter((l) => l.habitId === 'habit-pomodoro')
     .reduce((acc, l) => acc + (l.numericValue || 0), 0);
 
-  const todayPomodoros = logs
-    .filter((l) => l.habitId === 'habit-pomodoro')
-    .pop()?.numericValue || 0;
+  const todayLog = selectedDayLogs.find((l) => l.habitId === 'habit-pomodoro');
+  const todayPomodoros = todayLog?.numericValue ?? 0;
 
   return (
     <div className="space-y-4 sm:space-y-6 max-w-4xl mx-auto w-full">
@@ -200,7 +414,7 @@ export const PomodoroTimer: React.FC = () => {
         {/* Mode Buttons */}
         <div className="grid grid-cols-3 gap-1 bg-slate-900 border border-slate-800 p-1 sm:p-1.5 rounded-2xl w-full sm:w-auto">
           <button
-            onClick={() => setMode('focus')}
+            onClick={() => switchMode('focus')}
             className={clsx(
               'px-2 py-2 sm:px-3.5 sm:py-1.5 rounded-xl font-bold text-[11px] sm:text-xs transition-all cursor-pointer flex items-center justify-center gap-1 sm:gap-1.5 min-h-[38px]',
               mode === 'focus'
@@ -212,7 +426,7 @@ export const PomodoroTimer: React.FC = () => {
             <span>Focus ({pomodoroSettings.focusDuration}m)</span>
           </button>
           <button
-            onClick={() => setMode('shortBreak')}
+            onClick={() => switchMode('shortBreak')}
             className={clsx(
               'px-2 py-2 sm:px-3.5 sm:py-1.5 rounded-xl font-bold text-[11px] sm:text-xs transition-all cursor-pointer flex items-center justify-center gap-1 sm:gap-1.5 min-h-[38px]',
               mode === 'shortBreak'
@@ -224,7 +438,7 @@ export const PomodoroTimer: React.FC = () => {
             <span>Short ({pomodoroSettings.shortBreakDuration}m)</span>
           </button>
           <button
-            onClick={() => setMode('longBreak')}
+            onClick={() => switchMode('longBreak')}
             className={clsx(
               'px-2 py-2 sm:px-3.5 sm:py-1.5 rounded-xl font-bold text-[11px] sm:text-xs transition-all cursor-pointer flex items-center justify-center gap-1 sm:gap-1.5 min-h-[38px]',
               mode === 'longBreak'
@@ -260,7 +474,7 @@ export const PomodoroTimer: React.FC = () => {
               icon={isRunning ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
               className="w-full sm:w-auto px-8 py-3.5 sm:py-4 text-base sm:text-lg min-h-[48px] justify-center shadow-lg"
             >
-              {isRunning ? 'Pause' : 'Start Focus'}
+              {isRunning ? 'Pause' : mode === 'focus' ? 'Start Focus' : 'Start Break'}
             </Button>
 
             <div className="grid grid-cols-2 gap-2.5 w-full sm:w-auto">
