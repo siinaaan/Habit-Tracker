@@ -23,6 +23,7 @@ const STORAGE_KEYS = {
   TASKS: 'life_upgrade_tasks_cache',
   EXPENSES: 'life_upgrade_expenses_cache',
   PENDING_SYNC: 'life_upgrade_pending_sync_queue',
+  SEEDED_USERS: 'life_upgrade_seeded_users_cache',
 };
 
 // Safe JSON Helper
@@ -40,17 +41,55 @@ function setLocalCache<T>(key: string, value: T): void {
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch (err) {
-    console.error(`Error saving ${key} to local cache:`, err);
+    console.error(`Error writing ${key} to local cache:`, err);
   }
 }
 
 class HabitService {
-  private syncState: SyncState = navigator.onLine ? 'synced' : 'offline';
+  private syncState: SyncState = 'synced';
   private syncListeners: ((state: SyncState) => void)[] = [];
   private isSyncing = false;
   private realtimeChannel: RealtimeChannel | null = null;
   private onRemoteChangeCallback: (() => void) | null = null;
-  private remoteChangeDebounceTimer: any = null;
+  private remoteChangeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // ==========================================
+  // 1. HABITS CRUD
+  // ==========================================
+  public async autoSeedDefaultHabits(userId: string): Promise<void> {
+    if (!navigator.onLine || !isSupabaseConfigured() || !userId) return;
+
+    // Check persistent cache to ensure seeding runs only ONCE per user
+    const seededUsers = getLocalCache<string[]>(STORAGE_KEYS.SEEDED_USERS, []);
+    if (seededUsers.includes(userId)) return;
+
+    // Mark user as seeded in persistent cache immediately to prevent repeated seeding attempts
+    setLocalCache(STORAGE_KEYS.SEEDED_USERS, [...seededUsers, userId]);
+
+    try {
+      const { data: existing, error: selectErr } = await supabase
+        .from('habits')
+        .select('id');
+
+      if (selectErr) return;
+
+      const existingIds = new Set(existing?.map((h) => h.id) || []);
+      const missingDefaults = DEFAULT_HABITS.filter((h) => !existingIds.has(h.id));
+
+      if (missingDefaults.length === 0) return;
+
+      for (const h of missingDefaults) {
+        const payload = this.mapHabitToDb(h, userId);
+        // Insert missing defaults silently, handling 409 conflict gracefully if already owned globally by another user
+        const { error: insertErr } = await supabase.from('habits').insert(payload);
+        if (insertErr && insertErr.code !== '23505') {
+          // Ignore 409 unique constraint conflict (code 23505) silently
+        }
+      }
+    } catch {
+      // Ignore seeding errors gracefully
+    }
+  }
 
   constructor() {
     // Register network status listeners
@@ -455,38 +494,7 @@ class HabitService {
     return payload;
   }
 
-  private seededUsers = new Set<string>();
 
-  // ==========================================
-  // 1. HABITS CRUD
-  // ==========================================
-  public async autoSeedDefaultHabits(userId: string): Promise<void> {
-    if (!navigator.onLine || !isSupabaseConfigured() || !userId) return;
-    if (this.seededUsers.has(userId)) return;
-
-    this.seededUsers.add(userId);
-
-    try {
-      const { data: existing, error: selectErr } = await supabase
-        .from('habits')
-        .select('id');
-
-      if (selectErr) return;
-
-      const existingIds = new Set(existing?.map((h) => h.id) || []);
-      const missingDefaults = DEFAULT_HABITS.filter((h) => !existingIds.has(h.id));
-
-      if (missingDefaults.length === 0) return;
-
-      for (const h of missingDefaults) {
-        const payload = this.mapHabitToDb(h, userId);
-        // Insert missing defaults silently ignoring conflicts if already owned globally
-        await supabase.from('habits').insert(payload);
-      }
-    } catch {
-      // Ignore seeding errors silently
-    }
-  }
 
   public async getHabits(): Promise<Habit[]> {
     let localHabits = getLocalCache<Habit[]>(STORAGE_KEYS.HABITS, []);
