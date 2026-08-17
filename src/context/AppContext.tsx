@@ -15,6 +15,7 @@ import type {
 import { StorageService } from '../services/storage';
 import { habitService } from '../services/habitService';
 import { AnalyticsService } from '../services/analytics';
+import { getTodayLocalDateStr, isPreviousDateLocked } from '../utils/dateUtils';
 import confetti from 'canvas-confetti';
 
 interface ToastMessage {
@@ -29,6 +30,8 @@ interface AppContextType {
   setActiveTab: (tab: NavigationTab) => void;
   selectedDate: string;
   setSelectedDate: (date: string) => void;
+  todayDate: string;
+  isSelectedDateLocked: boolean;
 
   // Primary Entities
   activeChallenge: Challenge | null;
@@ -100,11 +103,12 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Navigation
+  // Navigation & Date State
   const [activeTab, setActiveTab] = useState<NavigationTab>('dashboard');
-  const [selectedDate, setSelectedDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
-  );
+  const [todayDate, setTodayDate] = useState<string>(getTodayLocalDateStr());
+  const [selectedDate, setSelectedDate] = useState<string>(getTodayLocalDateStr());
+
+  const isSelectedDateLocked = isPreviousDateLocked(selectedDate);
 
   // Entities
   const [activeChallenge, setActiveChallengeState] = useState<Challenge | null>(null);
@@ -181,15 +185,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       refreshAllState();
     });
 
+    const checkDateRollover = () => {
+      const currentToday = getTodayLocalDateStr();
+      setTodayDate((prevToday) => {
+        if (currentToday !== prevToday) {
+          setSelectedDate((prevSelected) => {
+            if (prevSelected === prevToday || prevSelected < currentToday) {
+              return currentToday;
+            }
+            return prevSelected;
+          });
+          return currentToday;
+        }
+        return prevToday;
+      });
+    };
+
+    const intervalId = setInterval(checkDateRollover, 10000);
+
     const handleFocus = () => {
+      checkDateRollover();
       if (navigator.onLine) {
         refreshAllState();
       }
     };
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        checkDateRollover();
+      }
+    };
+
     window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
+      clearInterval(intervalId);
       window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       habitService.setRemoteChangeCallback(null);
     };
   }, []);
@@ -281,15 +314,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteHabit = async (id: string) => {
     StorageService.deleteHabit(id);
-    await habitService.deleteHabit(id);
+    setHabitsState((prev) => prev.filter((h) => h.id !== id));
+    const res = await habitService.deleteHabit(id);
     const updatedList = await habitService.getHabits();
     setHabitsState(updatedList);
-    showToast('Habit deleted.', 'info');
+
+    if (res.success && res.synced) {
+      showToast('Habit deleted & synced.', 'info');
+    } else if (res.success) {
+      showToast('Habit deleted locally.', 'info');
+    } else if (res.error) {
+      showToast(`Failed to delete habit: ${res.error}`, 'error');
+    }
   };
 
   // Instant Habit Logging for current selected date
   const updateHabitLog = async (habitId: string, logData: Partial<HabitLog>) => {
     if (!activeChallenge) return;
+
+    // Action-level enforcement: Reject modifications for locked previous dates
+    if (selectedDate < getTodayLocalDateStr()) {
+      showToast('🔒 Previous day records are locked and read-only.', 'warning');
+      return;
+    }
 
     const trackerId = `tracker-${selectedDate}`;
     let tracker = trackers.find((t) => t.date === selectedDate || t.id === trackerId);
@@ -396,6 +443,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteDailyTracker = (id: string) => {
+    const tracker = trackers.find((t) => t.id === id);
+    if (tracker && tracker.date < getTodayLocalDateStr()) {
+      showToast('🔒 Previous day records are locked and read-only.', 'warning');
+      return;
+    }
     StorageService.deleteTracker(id);
     setTrackersState(StorageService.getTrackers());
     setLogsState(StorageService.getLogs());
@@ -561,6 +613,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveTab,
         selectedDate,
         setSelectedDate,
+        todayDate,
+        isSelectedDateLocked,
         activeChallenge,
         habits,
         trackers,

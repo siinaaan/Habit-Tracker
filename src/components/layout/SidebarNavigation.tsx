@@ -42,7 +42,7 @@ export const SidebarNavigation: React.FC = () => {
   ];
 
   return (
-    <aside className="hidden md:flex flex-col w-64 shrink-0 bg-slate-950 border-r border-slate-800/80 p-4 space-y-6 min-h-[calc(100vh-65px)] sticky top-[65px]">
+    <aside className="hidden md:flex flex-col w-64 shrink-0 bg-slate-950 border-r border-slate-800/80 p-4 space-y-6 h-full overflow-y-auto">
       <div className="space-y-1">
         <p className="px-3 text-[10px] font-bold tracking-widest text-slate-400 uppercase mb-2">
           Navigation

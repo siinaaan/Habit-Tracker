@@ -63,9 +63,6 @@ class HabitService {
     const seededUsers = getLocalCache<string[]>(STORAGE_KEYS.SEEDED_USERS, []);
     if (seededUsers.includes(userId)) return;
 
-    // Mark user as seeded in persistent cache immediately to prevent repeated seeding attempts
-    setLocalCache(STORAGE_KEYS.SEEDED_USERS, [...seededUsers, userId]);
-
     try {
       const { data: existing, error: selectErr } = await supabase
         .from('habits')
@@ -73,12 +70,22 @@ class HabitService {
 
       if (selectErr) return;
 
-      const existingIds = new Set(existing?.map((h) => h.id) || []);
-      const missingDefaults = DEFAULT_HABITS.filter((h) => !existingIds.has(h.id));
+      // If user already has habits in Supabase, mark user as seeded and return immediately
+      if (existing && existing.length > 0) {
+        setLocalCache(STORAGE_KEYS.SEEDED_USERS, [...seededUsers, userId]);
+        return;
+      }
 
-      if (missingDefaults.length === 0) return;
+      // Mark user as seeded in persistent cache immediately to prevent repeated seeding attempts
+      setLocalCache(STORAGE_KEYS.SEEDED_USERS, [...seededUsers, userId]);
 
-      for (const h of missingDefaults) {
+      // Seed habits from local cache if present, or fallback to DEFAULT_HABITS
+      let habitsToSeed = getLocalCache<Habit[]>(STORAGE_KEYS.HABITS, []);
+      if (!habitsToSeed.length) {
+        habitsToSeed = DEFAULT_HABITS;
+      }
+
+      for (const h of habitsToSeed) {
         const payload = this.mapHabitToDb(h, userId);
         // Insert missing defaults silently, handling 409 conflict gracefully if already owned globally by another user
         const { error: insertErr } = await supabase.from('habits').insert(payload);
@@ -498,9 +505,14 @@ class HabitService {
 
   public async getHabits(): Promise<Habit[]> {
     let localHabits = getLocalCache<Habit[]>(STORAGE_KEYS.HABITS, []);
-    if (!localHabits.length) {
+    const seededUsers = getLocalCache<string[]>(STORAGE_KEYS.SEEDED_USERS, []);
+
+    // Fall back to DEFAULT_HABITS only if local cache has never been initialized
+    const isUninitializedLocal = !localStorage.getItem(STORAGE_KEYS.HABITS) && !seededUsers.length;
+    if (isUninitializedLocal && !localHabits.length) {
       localHabits = DEFAULT_HABITS;
       setLocalCache(STORAGE_KEYS.HABITS, localHabits);
+      StorageService.saveHabits(localHabits);
     }
 
     if (navigator.onLine && isSupabaseConfigured()) {
@@ -513,16 +525,27 @@ class HabitService {
         const { data, error } = await supabase.from('habits').select('*').order('order', { ascending: true });
         if (!error && data) {
           const remoteHabits = data.map(this.mapDbToHabit);
-          const remoteIds = new Set(remoteHabits.map((h) => h.id));
 
-          // Ensure all built-in default habits are present in habit list even if owned globally by another user
-          const missingDefaults = DEFAULT_HABITS.filter((dh) => !remoteIds.has(dh.id));
-          const pendingCustomLocal = localHabits.filter((h) => !remoteIds.has(h.id) && h.category === 'Custom');
+          // Apply pending offline sync actions for habits table over remote habits
+          const pendingQueue = this.getPendingQueue().filter((item) => item.table === 'habits');
+          let effectiveHabits = [...remoteHabits];
 
-          const mergedHabits = [...remoteHabits, ...missingDefaults, ...pendingCustomLocal];
-          setLocalCache(STORAGE_KEYS.HABITS, mergedHabits);
+          for (const pending of pendingQueue) {
+            if (pending.action === 'DELETE') {
+              effectiveHabits = effectiveHabits.filter((h) => h.id !== pending.id);
+            } else if (pending.action === 'INSERT' || pending.action === 'UPDATE') {
+              if (pending.payload) {
+                const habitFromPending = this.mapDbToHabit(pending.payload);
+                effectiveHabits = effectiveHabits.filter((h) => h.id !== pending.id);
+                effectiveHabits.push(habitFromPending);
+              }
+            }
+          }
+
+          setLocalCache(STORAGE_KEYS.HABITS, effectiveHabits);
+          StorageService.saveHabits(effectiveHabits);
           this.setSyncState('synced');
-          return mergedHabits;
+          return effectiveHabits;
         }
       } catch (err) {
         console.warn('Supabase fetch habits failed, using local cache:', err);

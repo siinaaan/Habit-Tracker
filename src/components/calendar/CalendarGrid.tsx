@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { Card, CardTitle } from '../ui/Card';
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import { clsx } from 'clsx';
+import { formatDateToLocalStr, getTodayLocalDateStr, parseLocalDateStr } from '../../utils/dateUtils';
 
 export const CalendarGrid: React.FC = () => {
   const {
@@ -16,13 +17,11 @@ export const CalendarGrid: React.FC = () => {
 
   if (!activeChallenge) return null;
 
-  const startDate = new Date(activeChallenge.startDate);
-
   // Generate date string for any day number (1 - 90)
   const getDateForDayNumber = (dayNum: number): string => {
-    const d = new Date(startDate);
+    const d = parseLocalDateStr(activeChallenge.startDate);
     d.setDate(d.getDate() + (dayNum - 1));
-    return d.toISOString().split('T')[0];
+    return formatDateToLocalStr(d);
   };
 
   const handleDayClick = (dayNum: number) => {
@@ -32,19 +31,19 @@ export const CalendarGrid: React.FC = () => {
   };
 
   const handlePrevDay = () => {
-    const curr = new Date(selectedDate);
+    const curr = parseLocalDateStr(selectedDate);
     curr.setDate(curr.getDate() - 1);
-    setSelectedDate(curr.toISOString().split('T')[0]);
+    setSelectedDate(formatDateToLocalStr(curr));
   };
 
   const handleToday = () => {
-    setSelectedDate(new Date().toISOString().split('T')[0]);
+    setSelectedDate(getTodayLocalDateStr());
   };
 
   const handleNextDay = () => {
-    const curr = new Date(selectedDate);
+    const curr = parseLocalDateStr(selectedDate);
     curr.setDate(curr.getDate() + 1);
-    setSelectedDate(curr.toISOString().split('T')[0]);
+    setSelectedDate(formatDateToLocalStr(curr));
   };
 
   return (

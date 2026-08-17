@@ -4,14 +4,16 @@ import { HabitCard } from '../components/habits/HabitCard';
 import { Card, CardTitle } from '../components/ui/Card';
 import { ProgressBar } from '../components/ui/ProgressBar';
 import { Button } from '../components/ui/Button';
-import { Calendar, ChevronLeft, ChevronRight, CheckCircle2, Plus } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, CheckCircle2, Plus, Lock } from 'lucide-react';
 import type { HabitCategory } from '../types';
+import { formatDateToLocalStr, getTodayLocalDateStr, parseLocalDateStr } from '../utils/dateUtils';
 
 export const DailyTrackerView: React.FC = () => {
   const {
     currentDayNumber,
     selectedDate,
     setSelectedDate,
+    isSelectedDateLocked,
     selectedDayTracker,
     selectedDayLogs,
     habits,
@@ -26,19 +28,19 @@ export const DailyTrackerView: React.FC = () => {
     : (selectedDayTracker ? selectedDayTracker.completionPercentage : 0);
 
   const handlePrevDay = () => {
-    const curr = new Date(selectedDate);
+    const curr = parseLocalDateStr(selectedDate);
     curr.setDate(curr.getDate() - 1);
-    setSelectedDate(curr.toISOString().split('T')[0]);
+    setSelectedDate(formatDateToLocalStr(curr));
   };
 
   const handleToday = () => {
-    setSelectedDate(new Date().toISOString().split('T')[0]);
+    setSelectedDate(getTodayLocalDateStr());
   };
 
   const handleNextDay = () => {
-    const curr = new Date(selectedDate);
+    const curr = parseLocalDateStr(selectedDate);
     curr.setDate(curr.getDate() + 1);
-    setSelectedDate(curr.toISOString().split('T')[0]);
+    setSelectedDate(formatDateToLocalStr(curr));
   };
 
   // Group active habits into categories
@@ -57,8 +59,13 @@ export const DailyTrackerView: React.FC = () => {
       {/* Top Controls Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 border border-slate-800 p-5 rounded-3xl shadow-xl">
         <div>
-          <div className="flex items-center gap-2 text-xs font-bold text-indigo-400 uppercase tracking-widest">
-            <span>TODAY CHECK-IN</span> • <span>DAY {currentDayNumber} / 90</span>
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest flex-wrap">
+            <span className="text-indigo-400">DAY CHECK-IN</span> • <span className="text-indigo-400">DAY {currentDayNumber} / 90</span>
+            {isSelectedDateLocked && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold ml-1">
+                <Lock className="w-3 h-3" /> Previous day — Read only
+              </span>
+            )}
           </div>
           <h2 className="text-2xl font-black text-slate-100 mt-1 flex items-center gap-2">
             <Calendar className="w-5 h-5 text-indigo-400" /> {selectedDate}
@@ -138,6 +145,7 @@ export const DailyTrackerView: React.FC = () => {
                       habit={habit}
                       log={log}
                       onUpdateLog={updateHabitLog}
+                      isReadOnly={isSelectedDateLocked}
                     />
                   );
                 })}

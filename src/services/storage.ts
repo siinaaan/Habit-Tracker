@@ -65,16 +65,17 @@ export class StorageService {
   static initializeStorage(): void {
     const existingChallenges = localStorage.getItem(KEYS.CHALLENGES);
     if (!existingChallenges) {
-      console.log('Initializing application with fresh zero-progress challenge...');
-      const todayStr = new Date().toISOString().split('T')[0];
+      const d = new Date();
+      const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       const endDateObj = new Date();
       endDateObj.setDate(endDateObj.getDate() + 89);
+      const endDateStr = `${endDateObj.getFullYear()}-${String(endDateObj.getMonth() + 1).padStart(2, '0')}-${String(endDateObj.getDate()).padStart(2, '0')}`;
 
       const freshChallenge: Challenge = {
         id: `challenge-${Date.now()}`,
         name: '90-Day High Performance Upgrade',
         startDate: todayStr,
-        endDate: endDateObj.toISOString().split('T')[0],
+        endDate: endDateStr,
         description: 'Transforming discipline, spiritual alignment, coding mastery, and physical health in 90 structured days.',
         status: 'Active',
         createdDate: new Date().toISOString(),

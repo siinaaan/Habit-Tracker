@@ -9,12 +9,14 @@ interface HabitCardProps {
   habit: Habit;
   log?: HabitLog;
   onUpdateLog: (habitId: string, logData: Partial<HabitLog>) => void;
+  isReadOnly?: boolean;
 }
 
 export const HabitCard: React.FC<HabitCardProps> = ({
   habit,
   log,
   onUpdateLog,
+  isReadOnly = false,
 }) => {
   const { openAddHabitModal, deleteHabit } = useApp();
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
@@ -54,12 +56,14 @@ export const HabitCard: React.FC<HabitCardProps> = ({
   }, [isTimerRunning]);
 
   const handleStartTimer = () => {
+    if (isReadOnly) return;
     startTimeRef.current = Date.now();
     setTimerSeconds(0);
     setIsTimerRunning(true);
   };
 
   const handleStopTimer = () => {
+    if (isReadOnly) return;
     setIsTimerRunning(false);
     const now = Date.now();
     const elapsedSecs = startTimeRef.current
@@ -109,12 +113,14 @@ export const HabitCard: React.FC<HabitCardProps> = ({
   };
 
   const handleCheckboxToggle = () => {
+    if (isReadOnly) return;
     onUpdateLog(habit.id, {
       completed: !isCompleted,
     });
   };
 
   const handleNumberChange = (val: number) => {
+    if (isReadOnly) return;
     const safeVal = Math.max(0, val);
     const completed = safeVal >= habit.target;
     onUpdateLog(habit.id, {
@@ -124,6 +130,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
   };
 
   const handleDurationChange = (valMins: number) => {
+    if (isReadOnly) return;
     const safeMins = Math.max(0, valMins);
     const totalSecs = Math.round(safeMins * 60);
     const targetInSecs = (habit.target || 0) * 60;
@@ -135,6 +142,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
   };
 
   const handleTimeChange = (timeStr: string) => {
+    if (isReadOnly) return;
     onUpdateLog(habit.id, {
       timeValue: timeStr,
       completed: !!timeStr,
@@ -204,18 +212,26 @@ export const HabitCard: React.FC<HabitCardProps> = ({
               <div className="flex items-center gap-2">
                 {!isTimerRunning ? (
                   <button
+                    disabled={isReadOnly}
                     onClick={handleStartTimer}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-purple-600 hover:bg-purple-500 text-white border border-purple-500 shadow-md shadow-purple-600/30 transition-all cursor-pointer shrink-0 min-h-[38px]"
-                    title="Start Live Timer"
+                    className={clsx(
+                      "flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-purple-600 hover:bg-purple-500 text-white border border-purple-500 shadow-md shadow-purple-600/30 transition-all shrink-0 min-h-[38px]",
+                      isReadOnly ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
+                    )}
+                    title={isReadOnly ? "Previous day is read-only" : "Start Live Timer"}
                   >
                     <Play className="w-3.5 h-3.5 fill-current" />
                     <span>Start</span>
                   </button>
                 ) : (
                   <button
+                    disabled={isReadOnly}
                     onClick={handleStopTimer}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-rose-600 hover:bg-rose-500 text-white border border-rose-500 shadow-md shadow-rose-600/30 transition-all cursor-pointer animate-pulse shrink-0 min-h-[38px]"
-                    title="Stop & Save Elapsed Time"
+                    className={clsx(
+                      "flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-rose-600 hover:bg-rose-500 text-white border border-rose-500 shadow-md shadow-rose-600/30 transition-all animate-pulse shrink-0 min-h-[38px]",
+                      isReadOnly ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
+                    )}
+                    title={isReadOnly ? "Previous day is read-only" : "Stop & Save Elapsed Time"}
                   >
                     <Square className="w-3.5 h-3.5 fill-current" />
                     <span>Stop</span>
@@ -238,10 +254,15 @@ export const HabitCard: React.FC<HabitCardProps> = ({
                     type="number"
                     min="0"
                     step="any"
+                    disabled={isReadOnly}
+                    readOnly={isReadOnly}
                     value={log?.duration ? (log.duration / 60).toFixed(1).replace(/\.0$/, '') : ''}
                     onChange={(e) => handleDurationChange(parseFloat(e.target.value) || 0)}
                     placeholder="0"
-                    className="w-14 sm:w-16 bg-transparent text-sm font-bold text-white outline-none"
+                    className={clsx(
+                      "w-14 sm:w-16 bg-transparent text-sm font-bold text-white outline-none",
+                      isReadOnly && "opacity-60 cursor-not-allowed"
+                    )}
                   />
                   <span className="text-xs text-slate-400 font-semibold ml-1">mins</span>
                 </div>
@@ -253,9 +274,14 @@ export const HabitCard: React.FC<HabitCardProps> = ({
                   <Clock className="w-3.5 h-3.5 text-amber-400 mr-1.5 shrink-0" />
                   <input
                     type="time"
+                    disabled={isReadOnly}
+                    readOnly={isReadOnly}
                     value={log?.timeValue ?? ''}
                     onChange={(e) => handleTimeChange(e.target.value)}
-                    className="bg-transparent text-xs font-bold text-white outline-none cursor-pointer"
+                    className={clsx(
+                      "bg-transparent text-xs font-bold text-white outline-none",
+                      isReadOnly ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
+                    )}
                   />
                 </div>
               )}
@@ -264,14 +290,16 @@ export const HabitCard: React.FC<HabitCardProps> = ({
             {/* Action Row 2: Complete Button + Edit & Delete Buttons */}
             <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800/60">
               <button
+                disabled={isReadOnly}
                 onClick={handleCheckboxToggle}
                 className={clsx(
-                  'flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer border min-h-[38px]',
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs transition-all border min-h-[38px]',
+                  isReadOnly ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer',
                   isCompleted
                     ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
                     : 'bg-slate-800 text-slate-300 border-slate-700 hover:text-white'
                 )}
-                title="Toggle completion status"
+                title={isReadOnly ? "Previous day is read-only" : "Toggle completion status"}
               >
                 <div
                   className={clsx(
@@ -310,13 +338,16 @@ export const HabitCard: React.FC<HabitCardProps> = ({
             {/* CHECKBOX TYPE */}
             {habit.type === 'checkbox' && (
               <button
+                disabled={isReadOnly}
                 onClick={handleCheckboxToggle}
                 className={clsx(
-                  'flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer border min-h-[38px]',
+                  'flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all border min-h-[38px]',
+                  isReadOnly ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer',
                   isCompleted
                     ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500 shadow-md shadow-emerald-600/30'
                     : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
                 )}
+                title={isReadOnly ? "Previous day is read-only" : "Toggle completion status"}
               >
                 <div
                   className={clsx(
@@ -341,22 +372,29 @@ export const HabitCard: React.FC<HabitCardProps> = ({
                     type="number"
                     step={habit.unit === 'L' ? '0.1' : '1'}
                     min="0"
+                    disabled={isReadOnly}
+                    readOnly={isReadOnly}
                     value={log?.numericValue ?? ''}
                     onChange={(e) => handleNumberChange(parseFloat(e.target.value) || 0)}
                     placeholder="0"
-                    className="w-14 sm:w-16 bg-transparent text-sm font-bold text-white outline-none"
+                    className={clsx(
+                      "w-14 sm:w-16 bg-transparent text-sm font-bold text-white outline-none",
+                      isReadOnly && "opacity-60 cursor-not-allowed"
+                    )}
                   />
                   <span className="text-xs text-slate-400 font-semibold ml-1">{habit.unit}</span>
                 </div>
                 <button
+                  disabled={isReadOnly}
                   onClick={handleCheckboxToggle}
                   className={clsx(
-                    'p-2 rounded-xl border transition-colors cursor-pointer min-h-[38px] min-w-[38px] flex items-center justify-center',
+                    'p-2 rounded-xl border transition-colors min-h-[38px] min-w-[38px] flex items-center justify-center',
+                    isReadOnly ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer',
                     isCompleted
                       ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
                       : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
                   )}
-                  title="Toggle status"
+                  title={isReadOnly ? "Previous day is read-only" : "Toggle status"}
                 >
                   <CheckSquare className="w-4 h-4" />
                 </button>
@@ -368,16 +406,16 @@ export const HabitCard: React.FC<HabitCardProps> = ({
               <button
                 onClick={() => openAddHabitModal(habit)}
                 className="p-2 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 cursor-pointer transition-colors min-h-[38px] min-w-[38px] flex items-center justify-center"
-                title="Edit habit"
-                aria-label="Edit habit"
+                title="Edit habit definition"
+                aria-label="Edit habit definition"
               >
                 <Edit2 className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={() => setIsConfirmDeleteOpen(true)}
                 className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 cursor-pointer transition-colors min-h-[38px] min-w-[38px] flex items-center justify-center"
-                title="Delete habit"
-                aria-label="Delete habit"
+                title="Delete habit definition"
+                aria-label="Delete habit definition"
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>

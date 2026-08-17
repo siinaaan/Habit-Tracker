@@ -36,6 +36,7 @@ export const DashboardView: React.FC = () => {
     updateHabitLog,
     setActiveTab,
     selectedDate,
+    isSelectedDateLocked,
     setIsAddTaskModalOpen,
   } = useApp();
 
@@ -250,6 +251,7 @@ export const DashboardView: React.FC = () => {
                     habit={habit}
                     log={log}
                     onUpdateLog={updateHabitLog}
+                    isReadOnly={isSelectedDateLocked}
                   />
                 );
               })}
