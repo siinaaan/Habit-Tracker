@@ -13,16 +13,16 @@ import type {
 import { DEFAULT_HABITS } from '../constants/defaultHabits';
 
 const KEYS = {
-  CHALLENGES: 'life_upgrade_challenges',
-  HABITS: 'life_upgrade_habits',
+  CHALLENGES: 'life_upgrade_challenge_cache',
+  HABITS: 'life_upgrade_habits_cache',
   TRACKERS: 'life_upgrade_trackers',
-  LOGS: 'life_upgrade_logs',
+  LOGS: 'life_upgrade_completions_cache',
   GOALS: 'life_upgrade_goals',
   REFLECTIONS: 'life_upgrade_reflections',
   LEARNING: 'life_upgrade_learning',
-  TASKS: 'life_upgrade_tasks',
+  TASKS: 'life_upgrade_tasks_cache',
   SETTINGS: 'life_upgrade_settings',
-  EXPENSES: 'life_upgrade_expenses',
+  EXPENSES: 'life_upgrade_expenses_cache',
 };
 
 // Safe JSON parser

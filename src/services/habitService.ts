@@ -381,6 +381,19 @@ class HabitService {
   // ==========================================
   // 1. HABITS CRUD
   // ==========================================
+  public async autoSeedDefaultHabits(userId: string): Promise<void> {
+    if (!navigator.onLine || !isSupabaseConfigured() || !userId) return;
+    try {
+      const payloads = DEFAULT_HABITS.map((h) => this.mapHabitToDb(h, userId));
+      const { error } = await supabase.from('habits').upsert(payloads);
+      if (error) {
+        console.warn('autoSeedDefaultHabits warning:', error.message);
+      }
+    } catch (err) {
+      console.warn('autoSeedDefaultHabits error:', err);
+    }
+  }
+
   public async getHabits(): Promise<Habit[]> {
     let localHabits = getLocalCache<Habit[]>(STORAGE_KEYS.HABITS, []);
     if (!localHabits.length) {
@@ -390,12 +403,17 @@ class HabitService {
 
     if (navigator.onLine && isSupabaseConfigured()) {
       try {
+        const userId = await this.getAuthenticatedUserId();
+        if (userId) {
+          await this.autoSeedDefaultHabits(userId);
+        }
+
         const { data, error } = await supabase.from('habits').select('*').order('order', { ascending: true });
-        if (!error && data && data.length > 0) {
+        if (!error && data) {
           const remoteHabits = data.map(this.mapDbToHabit);
           const remoteIds = new Set(remoteHabits.map((h) => h.id));
-          const missingLocal = localHabits.filter((h) => !remoteIds.has(h.id));
-          const mergedHabits = [...remoteHabits, ...missingLocal];
+          const pendingCustomLocal = localHabits.filter((h) => !remoteIds.has(h.id) && h.category === 'Custom');
+          const mergedHabits = [...remoteHabits, ...pendingCustomLocal];
           setLocalCache(STORAGE_KEYS.HABITS, mergedHabits);
           this.setSyncState('synced');
           return mergedHabits;
@@ -561,9 +579,11 @@ class HabitService {
         let query = supabase.from('habit_completions').select('*');
         if (habitId) query = query.eq('habit_id', habitId);
         const { data, error } = await query;
-        if (!error && data && data.length > 0) {
+        if (!error && data) {
           const remoteLogs = data.map(this.mapDbToCompletion);
-          setLocalCache(STORAGE_KEYS.COMPLETIONS, remoteLogs);
+          if (!habitId) {
+            setLocalCache(STORAGE_KEYS.COMPLETIONS, remoteLogs);
+          }
           this.setSyncState('synced');
           return habitId ? remoteLogs.filter((l) => l.habitId === habitId) : remoteLogs;
         }

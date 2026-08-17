@@ -196,11 +196,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     : 1;
 
   // Selected date tracker & logs
-  let selectedDayTracker = trackers.find((t) => t.date === selectedDate) || null;
-  
-  const selectedDayLogs = selectedDayTracker
-    ? logs.filter((l) => l.dailyTrackerId === selectedDayTracker!.id)
-    : [];
+  const deterministicTrackerId = `tracker-${selectedDate}`;
+  let selectedDayTracker = trackers.find((t) => t.date === selectedDate || t.id === deterministicTrackerId) || {
+    id: deterministicTrackerId,
+    challengeId: activeChallenge?.id || '',
+    dayNumber: currentDayNumber,
+    date: selectedDate,
+    completionPercentage: 0,
+    notes: '',
+    createdDate: new Date().toISOString(),
+    updatedDate: new Date().toISOString(),
+  };
+
+  const selectedDayLogs = logs.filter(
+    (l) =>
+      l.dailyTrackerId === selectedDayTracker.id ||
+      l.dailyTrackerId === deterministicTrackerId ||
+      l.dailyTrackerId === selectedDate ||
+      l.dailyTrackerId.includes(selectedDate)
+  );
 
   // --- CRUD Implementations ---
   const saveChallenge = (challenge: Challenge) => {
@@ -255,7 +269,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateHabitLog = async (habitId: string, logData: Partial<HabitLog>) => {
     if (!activeChallenge) return;
 
-    let tracker = trackers.find((t) => t.date === selectedDate);
+    const trackerId = `tracker-${selectedDate}`;
+    let tracker = trackers.find((t) => t.date === selectedDate || t.id === trackerId);
     const dayNum = AnalyticsService.calculateDayNumber(
       activeChallenge.startDate,
       selectedDate
@@ -264,7 +279,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // If tracker doesn't exist yet for selected date, create it
     if (!tracker) {
       tracker = {
-        id: `tracker-${selectedDate}`,
+        id: trackerId,
         challengeId: activeChallenge.id,
         dayNumber: dayNum,
         date: selectedDate,
@@ -276,12 +291,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       StorageService.saveTracker(tracker);
     }
 
-    const currentLogs = StorageService.getLogs();
+    const currentLogs = await habitService.getHabitCompletions();
     let existingLog = currentLogs.find(
-      (l) => l.dailyTrackerId === tracker!.id && l.habitId === habitId
+      (l) => (l.dailyTrackerId === tracker!.id || l.dailyTrackerId === selectedDate || l.dailyTrackerId.includes(selectedDate)) && l.habitId === habitId
     );
 
     let updatedLog: HabitLog;
+    let res: { completion: HabitLog | null; synced: boolean; error?: string };
 
     if (!existingLog) {
       existingLog = {
@@ -297,17 +313,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updatedDate: new Date().toISOString(),
       };
       updatedLog = { ...existingLog, ...logData, updatedDate: new Date().toISOString() };
-      await habitService.createCompletion(updatedLog);
+      res = await habitService.createCompletion(updatedLog);
     } else {
       updatedLog = { ...existingLog, ...logData, updatedDate: new Date().toISOString() };
-      await habitService.updateCompletion(updatedLog.id, updatedLog);
+      res = await habitService.updateCompletion(updatedLog.id, updatedLog);
     }
 
     StorageService.saveLog(updatedLog);
 
     // Re-evaluate tracker completion percentage
     const allLogsForTracker = StorageService.getLogs().filter(
-      (l) => l.dailyTrackerId === tracker!.id
+      (l) => l.dailyTrackerId === tracker!.id || l.dailyTrackerId === selectedDate || l.dailyTrackerId.includes(selectedDate)
     );
 
     const activeHabits = habits.filter((h) => h.active);
@@ -332,6 +348,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (newCompletion === 100 && tracker.completionPercentage < 100) {
       triggerConfetti();
       showToast(`🔥 Boom! Day ${dayNum} 100% Completed!`, 'success');
+    } else if (res.error) {
+      console.warn('Habit completion sync warning:', res.error);
     }
   };
 
