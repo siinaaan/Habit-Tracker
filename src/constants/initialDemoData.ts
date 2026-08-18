@@ -90,36 +90,36 @@ export const generateDemoDailyData = (): {
       let timeValue: string | null = null;
 
       // Realistic variation
-      if (habit.id === 'habit-fajr') completed = true;
-      else if (habit.id === 'habit-dhuhr') completed = true;
-      else if (habit.id === 'habit-asr') completed = true;
-      else if (habit.id === 'habit-maghrib') completed = true;
-      else if (habit.id === 'habit-isha') completed = true;
-      else if (habit.id === 'habit-leetcode') {
+      if (habit.id.startsWith('habit-fajr')) completed = true;
+      else if (habit.id.startsWith('habit-dhuhr')) completed = true;
+      else if (habit.id.startsWith('habit-asr')) completed = true;
+      else if (habit.id.startsWith('habit-maghrib')) completed = true;
+      else if (habit.id.startsWith('habit-isha')) completed = true;
+      else if (habit.id.startsWith('habit-leetcode')) {
         numericValue = idx % 2 === 0 ? 2 : 3;
         completed = numericValue >= habit.target;
-      } else if (habit.id === 'habit-coding') {
+      } else if (habit.id.startsWith('habit-coding')) {
         duration = (180 + (idx % 3) * 15) * 60;
         completed = duration >= habit.target * 60;
-      } else if (habit.id === 'habit-pomodoro') {
+      } else if (habit.id.startsWith('habit-pomodoro')) {
         numericValue = 4 + (idx % 2);
         completed = numericValue >= habit.target;
-      } else if (habit.id === 'habit-discipline') {
+      } else if (habit.id.startsWith('habit-discipline')) {
         completed = idx !== 3; // missed day 4
-      } else if (habit.id === 'habit-workout') {
+      } else if (habit.id.startsWith('habit-workout')) {
         duration = 45 * 60;
         completed = true;
-      } else if (habit.id === 'habit-water') {
+      } else if (habit.id.startsWith('habit-water')) {
         numericValue = 2.8;
         completed = true;
-      } else if (habit.id === 'habit-meditation') {
+      } else if (habit.id.startsWith('habit-meditation')) {
         duration = 15 * 60;
         completed = true;
-      } else if (habit.id === 'habit-scroll') {
+      } else if (habit.id.startsWith('habit-scroll')) {
         completed = true;
-      } else if (habit.id === 'habit-snack') {
+      } else if (habit.id.startsWith('habit-snack')) {
         completed = true;
-      } else if (habit.id === 'habit-sleep') {
+      } else if (habit.id.startsWith('habit-sleep')) {
         timeValue = '23:30';
         completed = true;
       }

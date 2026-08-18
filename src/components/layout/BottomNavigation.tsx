@@ -14,6 +14,7 @@ import {
   Trophy,
   Timer,
   Wallet,
+  StickyNote,
   Settings,
   X,
 } from 'lucide-react';
@@ -30,6 +31,7 @@ export const BottomNavigation: React.FC = () => {
   ];
 
   const secondaryItems = [
+    { id: 'notes' as NavigationTab, label: 'Notes', icon: <StickyNote className="w-5 h-5 text-indigo-400" /> },
     { id: 'expenses' as NavigationTab, label: 'Expenses', icon: <Wallet className="w-5 h-5 text-emerald-400" /> },
     { id: 'analytics' as NavigationTab, label: 'Analytics', icon: <BarChart3 className="w-5 h-5 text-indigo-400" /> },
     { id: 'pomodoro' as NavigationTab, label: 'Pomodoro Timer', icon: <Timer className="w-5 h-5 text-orange-400" /> },

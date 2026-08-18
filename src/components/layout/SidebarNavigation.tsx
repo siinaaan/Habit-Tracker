@@ -13,6 +13,7 @@ import {
   Trophy,
   Timer,
   Wallet,
+  StickyNote,
   Settings as SettingsIcon,
 } from 'lucide-react';
 import { clsx } from 'clsx';
@@ -30,6 +31,7 @@ export const SidebarNavigation: React.FC = () => {
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
     { id: 'daily', label: 'Daily Tracker', icon: <CalendarCheck className="w-5 h-5" /> },
     { id: 'expenses', label: 'Expenses', icon: <Wallet className="w-5 h-5" /> },
+    { id: 'notes', label: 'Notes', icon: <StickyNote className="w-5 h-5" /> },
     { id: 'analytics', label: 'Analytics', icon: <BarChart3 className="w-5 h-5" /> },
     { id: 'calendar', label: '90-Day Calendar', icon: <CalendarDays className="w-5 h-5" /> },
     { id: 'weekly', label: 'Weekly Report', icon: <TrendingUp className="w-5 h-5" /> },

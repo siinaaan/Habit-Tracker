@@ -11,11 +11,13 @@ import type {
   AppSettings,
   NavigationTab,
   ExpenseTransaction,
+  Note,
 } from '../types';
 import { StorageService } from '../services/storage';
 import { habitService } from '../services/habitService';
 import { AnalyticsService } from '../services/analytics';
 import { getTodayLocalDateStr, isPreviousDateLocked } from '../utils/dateUtils';
+import { resolveHabitId, isMatchingDefaultHabit } from '../utils/habitUtils';
 import confetti from 'canvas-confetti';
 
 interface ToastMessage {
@@ -43,6 +45,7 @@ interface AppContextType {
   learningItems: LearningItem[];
   tasks: TaskItem[];
   expenses: ExpenseTransaction[];
+  notes: Note[];
   settings: AppSettings;
 
   // Add Task & Add Habit Modal State
@@ -86,6 +89,10 @@ interface AppContextType {
   saveExpense: (expense: ExpenseTransaction) => void;
   deleteExpense: (id: string) => void;
 
+  saveNote: (note: Note) => void;
+  deleteNote: (id: string) => void;
+  toggleArchiveNote: (id: string) => void;
+
   updateSettings: (settings: AppSettings) => void;
 
   // Actions
@@ -120,6 +127,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [learningItems, setLearningItemsState] = useState<LearningItem[]>([]);
   const [tasks, setTasksState] = useState<TaskItem[]>([]);
   const [expenses, setExpensesState] = useState<ExpenseTransaction[]>([]);
+  const [notes, setNotesState] = useState<Note[]>([]);
   const [settings, setSettingsState] = useState<AppSettings>(StorageService.getSettings());
 
   // Add Task & Add Habit Modal State
@@ -164,12 +172,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const fetchedLogs = await habitService.getHabitCompletions();
     const fetchedTasks = await habitService.getTasks();
     const fetchedExpenses = await habitService.getExpenses();
+    const fetchedNotes = await habitService.getNotes();
 
     setActiveChallengeState(fetchedChallenge || StorageService.getActiveChallenge());
     setHabitsState(fetchedHabits);
     setLogsState(fetchedLogs);
     setTasksState(fetchedTasks);
     setExpensesState(fetchedExpenses);
+    setNotesState(fetchedNotes);
     
     setTrackersState(StorageService.getTrackers());
     setGoalsState(StorageService.getGoals());
@@ -361,6 +371,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setTrackersState(StorageService.getTrackers());
     }
 
+    const effectiveHabitId = resolveHabitId(habitId, habits);
+
     // Synchronous local lookup to prevent race conditions on rapid clicks
     const localLogs = StorageService.getLogs();
     let existingLog = localLogs.find(
@@ -368,7 +380,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         (l.dailyTrackerId === tracker!.id ||
           l.dailyTrackerId === selectedDate ||
           l.dailyTrackerId.includes(selectedDate)) &&
-        l.habitId === habitId
+        (l.habitId === effectiveHabitId || isMatchingDefaultHabit(l.habitId, habitId))
     );
 
     const isNew = !existingLog;
@@ -376,8 +388,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (!existingLog) {
       const newLog: HabitLog = {
-        id: `log-${tracker.id}-${habitId}`,
-        habitId,
+        id: `log-${tracker.id}-${effectiveHabitId}`,
+        habitId: effectiveHabitId,
         dailyTrackerId: tracker.id,
         completed: false,
         numericValue: null,
@@ -574,6 +586,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Expense transaction deleted.', 'info');
   };
 
+  // Notes CRUD
+  const saveNote = async (note: Note) => {
+    StorageService.saveNote(note);
+    const existing = notes.find((n) => n.id === note.id);
+    let res: { synced: boolean; error?: string };
+    if (existing) {
+      res = await habitService.updateNote(note.id, note);
+    } else {
+      res = await habitService.createNote(note);
+    }
+    const updatedNotes = await habitService.getNotes();
+    setNotesState(updatedNotes);
+
+    if (res.synced) {
+      showToast(`Note "${note.title}" saved & synced!`, 'success');
+    } else if (res.error) {
+      showToast(`Note saved locally (Cloud error: ${res.error})`, 'warning');
+    } else {
+      showToast(`Note "${note.title}" saved locally (offline)`, 'info');
+    }
+  };
+
+  const deleteNote = async (id: string) => {
+    StorageService.deleteNote(id);
+    await habitService.deleteNote(id);
+    const updatedNotes = await habitService.getNotes();
+    setNotesState(updatedNotes);
+    showToast('Note deleted.', 'info');
+  };
+
+  const toggleArchiveNote = async (id: string) => {
+    const note = notes.find((n) => n.id === id);
+    if (!note) return;
+    const newArchived = !note.archived;
+    const updated = { ...note, archived: newArchived, updatedDate: new Date().toISOString() };
+    StorageService.saveNote(updated);
+    await habitService.updateNote(id, { archived: newArchived });
+    const updatedNotes = await habitService.getNotes();
+    setNotesState(updatedNotes);
+    showToast(newArchived ? `Note "${note.title}" archived.` : `Note "${note.title}" restored.`, 'info');
+  };
+
   // Settings
   const updateSettings = (newSettings: AppSettings) => {
     StorageService.saveSettings(newSettings);
@@ -624,6 +678,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         learningItems,
         tasks,
         expenses,
+        notes,
         settings,
         isAddTaskModalOpen,
         setIsAddTaskModalOpen,
@@ -653,6 +708,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toggleTaskCompleted,
         saveExpense,
         deleteExpense,
+        saveNote,
+        deleteNote,
+        toggleArchiveNote,
         updateSettings,
         triggerConfetti,
         resetToNewChallenge,

@@ -5,6 +5,7 @@ import type {
   WeeklySummary,
   TaskItem,
 } from '../types';
+import { isMatchingDefaultHabit } from '../utils/habitUtils';
 
 export class AnalyticsService {
   /**
@@ -119,10 +120,11 @@ export class AnalyticsService {
    */
   static calculateAverageMetric(
     habitId: string,
-    logs: HabitLog[]
+    logs: HabitLog[],
+    userId?: string | null
   ): number {
     const habitLogs = logs.filter(
-      (l) => l.habitId === habitId && (l.numericValue !== null || l.duration !== null)
+      (l) => isMatchingDefaultHabit(l.habitId, habitId, userId) && (l.numericValue !== null || l.duration !== null)
     );
     if (!habitLogs.length) return 0;
 
@@ -141,8 +143,8 @@ export class AnalyticsService {
   /**
    * Total count metric across tracked days
    */
-  static calculateTotalMetric(habitId: string, logs: HabitLog[]): number {
-    const habitLogs = logs.filter((l) => l.habitId === habitId);
+  static calculateTotalMetric(habitId: string, logs: HabitLog[], userId?: string | null): number {
+    const habitLogs = logs.filter((l) => isMatchingDefaultHabit(l.habitId, habitId, userId));
     if (!habitLogs.length) return 0;
     let total = 0;
     habitLogs.forEach((l) => {
@@ -158,7 +160,8 @@ export class AnalyticsService {
     weekNumber: number,
     trackers: DailyTracker[],
     logs: HabitLog[],
-    habits: Habit[]
+    habits: Habit[],
+    userId?: string | null
   ): WeeklySummary {
     const startDay = (weekNumber - 1) * 7 + 1;
     const endDay = weekNumber * 7;
@@ -198,7 +201,7 @@ export class AnalyticsService {
       habits
     );
 
-    const waterAverage = this.calculateAverageMetric('habit-water', weekLogs);
+    const waterAverage = this.calculateAverageMetric('habit-water', weekLogs, userId);
 
     const meditationConsistency = this.calculateCategoryConsistency(
       'Health',
@@ -207,11 +210,11 @@ export class AnalyticsService {
       habits
     );
 
-    const screenTimeAverage = this.calculateAverageMetric('habit-scroll', weekLogs);
-    const pomodoroSessionsTotal = this.calculateTotalMetric('habit-pomodoro', weekLogs);
-    const leetcodeProblemsTotal = this.calculateTotalMetric('habit-leetcode', weekLogs);
+    const screenTimeAverage = this.calculateAverageMetric('habit-scroll', weekLogs, userId);
+    const pomodoroSessionsTotal = this.calculateTotalMetric('habit-pomodoro', weekLogs, userId);
+    const leetcodeProblemsTotal = this.calculateTotalMetric('habit-leetcode', weekLogs, userId);
 
-    const sleepLogs = weekLogs.filter((l) => l.habitId === 'habit-sleep' && l.completed);
+    const sleepLogs = weekLogs.filter((l) => isMatchingDefaultHabit(l.habitId, 'habit-sleep', userId) && l.completed);
     const sleepConsistency = weekTrackers.length
       ? Math.round((sleepLogs.length / weekTrackers.length) * 100)
       : 0;

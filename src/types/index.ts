@@ -175,6 +175,7 @@ export type NavigationTab =
   | 'milestones'
   | 'pomodoro'
   | 'expenses'
+  | 'notes'
   | 'settings';
 
 export type ExpenseType = 'income' | 'expense';
@@ -200,6 +201,17 @@ export interface ExpenseTransaction {
   category: ExpenseCategory | string;
   date: string; // ISO format YYYY-MM-DD
   note?: string;
+  createdDate: string;
+  updatedDate: string;
+}
+
+export interface Note {
+  id: string;
+  userId?: string;
+  title: string;
+  content: string;
+  color: string;
+  archived: boolean;
   createdDate: string;
   updatedDate: string;
 }

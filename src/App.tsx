@@ -20,6 +20,7 @@ import { LearningView } from './views/LearningView';
 import { MilestonesView } from './components/milestones/MilestonesView';
 import { PomodoroTimer } from './components/pomodoro/PomodoroTimer';
 import { ExpensesView } from './views/ExpensesView';
+import { NotesView } from './views/NotesView';
 import { SettingsView } from './views/SettingsView';
 import { Flame } from 'lucide-react';
 
@@ -31,6 +32,7 @@ const MainContent: React.FC = () => {
       {activeTab === 'dashboard' && <DashboardView />}
       {activeTab === 'daily' && <DailyTrackerView />}
       {activeTab === 'expenses' && <ExpensesView />}
+      {activeTab === 'notes' && <NotesView />}
       {activeTab === 'analytics' && <AnalyticsCharts />}
       {activeTab === 'calendar' && <CalendarGrid />}
       {activeTab === 'weekly' && <WeeklyReportView />}

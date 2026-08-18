@@ -1,20 +1,23 @@
 import { supabase, isSupabaseConfigured } from './supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
-import type { Habit, HabitLog, Challenge, TaskItem, ExpenseTransaction } from '../types';
+import type { Habit, HabitLog, Challenge, TaskItem, ExpenseTransaction, Note } from '../types';
 import { DEFAULT_HABITS } from '../constants/defaultHabits';
 import { generateDemoDailyData } from '../constants/initialDemoData';
 import { StorageService } from './storage';
+import { isMatchingDefaultHabit } from '../utils/habitUtils';
 
 export type SyncState = 'synced' | 'syncing' | 'offline' | 'error';
 
 export interface PendingSyncItem {
   id: string;
-  table: 'habits' | 'habit_completions' | 'challenge_progress' | 'tasks' | 'expenses';
+  table: 'habits' | 'habit_completions' | 'challenge_progress' | 'tasks' | 'expenses' | 'notes';
   action: 'INSERT' | 'UPDATE' | 'DELETE';
   payload: any;
   userId?: string;
   timestamp: number;
 }
+
+const DEFAULT_HABITS_MIGRATION_VERSION = 1;
 
 const STORAGE_KEYS = {
   HABITS: 'life_upgrade_habits_cache',
@@ -22,8 +25,11 @@ const STORAGE_KEYS = {
   CHALLENGE: 'life_upgrade_challenge_cache',
   TASKS: 'life_upgrade_tasks_cache',
   EXPENSES: 'life_upgrade_expenses_cache',
+  NOTES: 'life_upgrade_notes_cache',
   PENDING_SYNC: 'life_upgrade_pending_sync_queue',
   SEEDED_USERS: 'life_upgrade_seeded_users_cache',
+  DELETED_HABITS: 'life_upgrade_deleted_habits_cache',
+  MIGRATION_VERSION: 'life_upgrade_migration_version_cache',
 };
 
 // Safe JSON Helper
@@ -59,42 +65,78 @@ class HabitService {
   public async autoSeedDefaultHabits(userId: string): Promise<void> {
     if (!navigator.onLine || !isSupabaseConfigured() || !userId) return;
 
-    // Check persistent cache to ensure seeding runs only ONCE per user
+    // Check per-user migration state & persistent seeded cache
+    const migrationKey = this.getCacheKey(STORAGE_KEYS.MIGRATION_VERSION, userId);
+    const migrationState = getLocalCache<{ version: number } | null>(migrationKey, null);
     const seededUsers = getLocalCache<string[]>(STORAGE_KEYS.SEEDED_USERS, []);
-    if (seededUsers.includes(userId)) return;
+
+    // Skip if current migration version has already executed for this user
+    if ((migrationState?.version ?? 0) >= DEFAULT_HABITS_MIGRATION_VERSION && seededUsers.includes(userId)) {
+      return;
+    }
 
     try {
-      const { data: existing, error: selectErr } = await supabase
+      // 1. Fetch current habits for user from Supabase
+      const { data: existingHabitsData, error: selectErr } = await supabase
         .from('habits')
-        .select('id');
+        .select('*');
 
       if (selectErr) return;
+      const existingHabits = (existingHabitsData || []).map(this.mapDbToHabit);
 
-      // If user already has habits in Supabase, mark user as seeded and return immediately
-      if (existing && existing.length > 0) {
-        setLocalCache(STORAGE_KEYS.SEEDED_USERS, [...seededUsers, userId]);
-        return;
-      }
+      // 2. Fetch deleted habits recorded explicitly by deleteHabit() in user-scoped cache
+      const deletedKey = this.getCacheKey(STORAGE_KEYS.DELETED_HABITS, userId);
+      const deletedHabits = getLocalCache<string[]>(deletedKey, []);
 
-      // Mark user as seeded in persistent cache immediately to prevent repeated seeding attempts
-      setLocalCache(STORAGE_KEYS.SEEDED_USERS, [...seededUsers, userId]);
+      // 3. Determine if user currently uses static default IDs (e.g. existing user account)
+      const usesStaticIds = existingHabits.some((h) =>
+        DEFAULT_HABITS.some((dh) => dh.id === h.id)
+      );
 
-      // Seed habits from local cache if present, or fallback to DEFAULT_HABITS
-      let habitsToSeed = getLocalCache<Habit[]>(STORAGE_KEYS.HABITS, []);
-      if (!habitsToSeed.length) {
-        habitsToSeed = DEFAULT_HABITS;
-      }
+      // 4. Iterate through DEFAULT_HABITS to find missing defaults
+      for (const dh of DEFAULT_HABITS) {
+        // A. Already Exists check
+        const alreadyExists = existingHabits.some((h) =>
+          isMatchingDefaultHabit(h.id, dh.id, userId)
+        );
+        if (alreadyExists) continue;
 
-      for (const h of habitsToSeed) {
-        const payload = this.mapHabitToDb(h, userId);
-        // Insert missing defaults silently, handling 409 conflict gracefully if already owned globally by another user
+        // B. Explicitly Intentionally Deleted check (recorded in DELETED_HABITS cache)
+        const isDeletedInCache = deletedHabits.some((delId) =>
+          isMatchingDefaultHabit(delId, dh.id, userId)
+        );
+        if (isDeletedInCache) {
+          // Intentionally deleted via deleteHabit() -> DO NOT CREATE
+          continue;
+        }
+
+        // C. Default missing & NOT in DELETED_HABITS -> CREATE MISSING DEFAULT HABIT
+        let habitId = dh.id;
+        if (!usesStaticIds || existingHabits.length === 0) {
+          habitId = `${dh.id}-${userId}`;
+        }
+
+        const habitToInsert = { ...dh, id: habitId };
+        const payload = this.mapHabitToDb(habitToInsert, userId);
+
         const { error: insertErr } = await supabase.from('habits').insert(payload);
-        if (insertErr && insertErr.code !== '23505') {
-          // Ignore 409 unique constraint conflict (code 23505) silently
+        if (insertErr) {
+          if (insertErr.code === '23505' && habitId === dh.id) {
+            // Static ID was taken globally by another user, retry insertion with user-scoped ID
+            const fallbackHabit = { ...dh, id: `${dh.id}-${userId}` };
+            const fallbackPayload = this.mapHabitToDb(fallbackHabit, userId);
+            await supabase.from('habits').insert(fallbackPayload);
+          } else if (insertErr.code !== '23505') {
+            console.warn(`Error auto-seeding missing default habit ${habitId} for user ${userId}:`, insertErr.message);
+          }
         }
       }
-    } catch {
-      // Ignore seeding errors gracefully
+
+      // Mark migration as completed for this user
+      setLocalCache(migrationKey, { version: DEFAULT_HABITS_MIGRATION_VERSION, migratedAt: new Date().toISOString() });
+      setLocalCache(STORAGE_KEYS.SEEDED_USERS, Array.from(new Set([...seededUsers, userId])));
+    } catch (err) {
+      console.warn('Error during autoSeedDefaultHabits migration:', err);
     }
   }
 
@@ -165,6 +207,13 @@ class HabitService {
             this.triggerRemoteChangeCallback();
           }
         )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'notes' },
+          () => {
+            this.triggerRemoteChangeCallback();
+          }
+        )
         .subscribe((status, err) => {
           if (status === 'SUBSCRIBED') {
             console.log(`Supabase Realtime connected successfully for user: ${userId}`);
@@ -211,19 +260,26 @@ class HabitService {
     }
   }
 
+  public getCacheKey(baseKey: string, userId?: string | null): string {
+    if (baseKey === STORAGE_KEYS.SEEDED_USERS) return baseKey;
+    return userId ? `${baseKey}_${userId}` : baseKey;
+  }
+
   // --- Pending Sync Queue Operations ---
-  private getPendingQueue(): PendingSyncItem[] {
-    return getLocalCache<PendingSyncItem[]>(STORAGE_KEYS.PENDING_SYNC, []);
+  private getPendingQueue(userId?: string | null): PendingSyncItem[] {
+    const key = this.getCacheKey(STORAGE_KEYS.PENDING_SYNC, userId);
+    return getLocalCache<PendingSyncItem[]>(key, []);
   }
 
   private enqueuePending(item: Omit<PendingSyncItem, 'timestamp'>): void {
-    const queue = this.getPendingQueue();
+    const queue = this.getPendingQueue(item.userId);
     // Avoid duplicate pending actions for same item if updating multiple times
     const filtered = queue.filter(
       (q) => !(q.id === item.id && q.table === item.table && q.action === item.action)
     );
     filtered.push({ ...item, timestamp: Date.now() });
-    setLocalCache(STORAGE_KEYS.PENDING_SYNC, filtered);
+    const key = this.getCacheKey(STORAGE_KEYS.PENDING_SYNC, item.userId);
+    setLocalCache(key, filtered);
   }
 
   public async syncPendingChanges(): Promise<void> {
@@ -328,7 +384,17 @@ class HabitService {
       // Sync Expenses
       const { data: expensesData } = await supabase.from('expenses').select('*');
       if (expensesData && expensesData.length > 0) {
-        setLocalCache(STORAGE_KEYS.EXPENSES, expensesData.map(this.mapDbToExpense));
+        const userId = await this.getAuthenticatedUserId();
+        const expensesKey = this.getCacheKey(STORAGE_KEYS.EXPENSES, userId);
+        setLocalCache(expensesKey, expensesData.map(this.mapDbToExpense));
+      }
+
+      // Sync Notes
+      const { data: notesData } = await supabase.from('notes').select('*');
+      if (notesData && notesData.length > 0) {
+        const userId = await this.getAuthenticatedUserId();
+        const notesKey = this.getCacheKey(STORAGE_KEYS.NOTES, userId);
+        setLocalCache(notesKey, notesData.map(this.mapDbToNote));
       }
     } catch (err) {
       console.warn('Could not refresh remote cache from Supabase:', err);
@@ -336,6 +402,32 @@ class HabitService {
   }
 
   // --- DB Schema Converters (Handling camelCase & snake_case) ---
+  private mapDbToNote(row: any): Note {
+    return {
+      id: row.id,
+      userId: row.user_id || row.userId || '',
+      title: row.title || '',
+      content: row.content || '',
+      color: row.color || 'default',
+      archived: !!row.archived,
+      createdDate: row.created_at || row.createdDate || new Date().toISOString(),
+      updatedDate: row.updated_at || row.updatedDate || new Date().toISOString(),
+    };
+  }
+
+  private mapNoteToDb(n: Note, userId?: string): any {
+    const payload: any = {
+      id: n.id,
+      title: n.title,
+      content: n.content,
+      color: n.color || 'default',
+      archived: n.archived ?? false,
+      created_at: n.createdDate,
+      updated_at: n.updatedDate,
+    };
+    if (userId) payload.user_id = userId;
+    return payload;
+  }
   private mapDbToTask(row: any): TaskItem {
     return {
       id: row.id,
@@ -504,20 +596,13 @@ class HabitService {
 
 
   public async getHabits(): Promise<Habit[]> {
-    let localHabits = getLocalCache<Habit[]>(STORAGE_KEYS.HABITS, []);
+    const userId = await this.getAuthenticatedUserId();
+    const habitCacheKey = this.getCacheKey(STORAGE_KEYS.HABITS, userId);
+    let localHabits = getLocalCache<Habit[]>(habitCacheKey, []);
     const seededUsers = getLocalCache<string[]>(STORAGE_KEYS.SEEDED_USERS, []);
-
-    // Fall back to DEFAULT_HABITS only if local cache has never been initialized
-    const isUninitializedLocal = !localStorage.getItem(STORAGE_KEYS.HABITS) && !seededUsers.length;
-    if (isUninitializedLocal && !localHabits.length) {
-      localHabits = DEFAULT_HABITS;
-      setLocalCache(STORAGE_KEYS.HABITS, localHabits);
-      StorageService.saveHabits(localHabits);
-    }
 
     if (navigator.onLine && isSupabaseConfigured()) {
       try {
-        const userId = await this.getAuthenticatedUserId();
         if (userId) {
           await this.autoSeedDefaultHabits(userId);
         }
@@ -527,7 +612,7 @@ class HabitService {
           const remoteHabits = data.map(this.mapDbToHabit);
 
           // Apply pending offline sync actions for habits table over remote habits
-          const pendingQueue = this.getPendingQueue().filter((item) => item.table === 'habits');
+          const pendingQueue = this.getPendingQueue(userId).filter((item) => item.table === 'habits');
           let effectiveHabits = [...remoteHabits];
 
           for (const pending of pendingQueue) {
@@ -542,7 +627,15 @@ class HabitService {
             }
           }
 
-          setLocalCache(STORAGE_KEYS.HABITS, effectiveHabits);
+          // Fallback if effectiveHabits is empty and user has not been seeded yet
+          if (effectiveHabits.length === 0 && (!userId || !seededUsers.includes(userId))) {
+            effectiveHabits = DEFAULT_HABITS.map((h) => ({
+              ...h,
+              id: userId && !h.id.includes(userId) ? `${h.id}-${userId}` : h.id,
+            }));
+          }
+
+          setLocalCache(habitCacheKey, effectiveHabits);
           StorageService.saveHabits(effectiveHabits);
           this.setSyncState('synced');
           return effectiveHabits;
@@ -551,6 +644,15 @@ class HabitService {
         console.warn('Supabase fetch habits failed, using local cache:', err);
         this.setSyncState('error');
       }
+    }
+
+    // Offline or unconfigured fallback
+    if (localHabits.length === 0 && (!userId || !seededUsers.includes(userId))) {
+      localHabits = DEFAULT_HABITS.map((h) => ({
+        ...h,
+        id: userId && !h.id.includes(userId) ? `${h.id}-${userId}` : h.id,
+      }));
+      setLocalCache(habitCacheKey, localHabits);
     }
 
     return localHabits;
@@ -562,12 +664,13 @@ class HabitService {
   }
 
   public async createHabit(habit: Habit): Promise<{ habit: Habit; synced: boolean; error?: string }> {
-    const habits = getLocalCache<Habit[]>(STORAGE_KEYS.HABITS, DEFAULT_HABITS);
+    const userId = await this.getAuthenticatedUserId();
+    const habitCacheKey = this.getCacheKey(STORAGE_KEYS.HABITS, userId);
+    const habits = getLocalCache<Habit[]>(habitCacheKey, DEFAULT_HABITS);
     const updated = [...habits.filter((h) => h.id !== habit.id), habit];
-    setLocalCache(STORAGE_KEYS.HABITS, updated);
+    setLocalCache(habitCacheKey, updated);
 
     if (navigator.onLine && isSupabaseConfigured()) {
-      const userId = await this.getAuthenticatedUserId();
       if (!userId) {
         const payload = this.mapHabitToDb(habit);
         this.enqueuePending({ id: habit.id, table: 'habits', action: 'INSERT', payload });
@@ -603,7 +706,9 @@ class HabitService {
   }
 
   public async updateHabit(id: string, updates: Partial<Habit>): Promise<{ habit: Habit | null; synced: boolean; error?: string }> {
-    const habits = getLocalCache<Habit[]>(STORAGE_KEYS.HABITS, DEFAULT_HABITS);
+    const userId = await this.getAuthenticatedUserId();
+    const habitCacheKey = this.getCacheKey(STORAGE_KEYS.HABITS, userId);
+    const habits = getLocalCache<Habit[]>(habitCacheKey, DEFAULT_HABITS);
     const existing = habits.find((h) => h.id === id);
     if (!existing) return { habit: null, synced: false, error: 'Habit not found' };
 
@@ -614,10 +719,9 @@ class HabitService {
     };
 
     const newList = habits.map((h) => (h.id === id ? updatedHabit : h));
-    setLocalCache(STORAGE_KEYS.HABITS, newList);
+    setLocalCache(habitCacheKey, newList);
 
     if (navigator.onLine && isSupabaseConfigured()) {
-      const userId = await this.getAuthenticatedUserId();
       if (!userId) {
         const payload = this.mapHabitToDb(updatedHabit);
         this.enqueuePending({ id, table: 'habits', action: 'UPDATE', payload });
@@ -653,12 +757,21 @@ class HabitService {
   }
 
   public async deleteHabit(id: string): Promise<{ success: boolean; synced: boolean; error?: string }> {
-    const habits = getLocalCache<Habit[]>(STORAGE_KEYS.HABITS, DEFAULT_HABITS);
+    const userId = await this.getAuthenticatedUserId();
+    const habitCacheKey = this.getCacheKey(STORAGE_KEYS.HABITS, userId);
+    const habits = getLocalCache<Habit[]>(habitCacheKey, DEFAULT_HABITS);
     const filtered = habits.filter((h) => h.id !== id);
-    setLocalCache(STORAGE_KEYS.HABITS, filtered);
+    setLocalCache(habitCacheKey, filtered);
+
+    if (userId) {
+      const deletedKey = this.getCacheKey(STORAGE_KEYS.DELETED_HABITS, userId);
+      const deletedHabits = getLocalCache<string[]>(deletedKey, []);
+      if (!deletedHabits.includes(id)) {
+        setLocalCache(deletedKey, [...deletedHabits, id]);
+      }
+    }
 
     if (navigator.onLine && isSupabaseConfigured()) {
-      const userId = await this.getAuthenticatedUserId();
       if (!userId) {
         this.enqueuePending({ id, table: 'habits', action: 'DELETE', payload: null });
         this.setSyncState('offline');
@@ -692,14 +805,16 @@ class HabitService {
   // 2. COMPLETIONS (HABIT LOGS) CRUD
   // ==========================================
   public async getHabitCompletions(habitId?: string): Promise<HabitLog[]> {
-    let localCompletions = getLocalCache<HabitLog[]>(STORAGE_KEYS.COMPLETIONS, []);
+    const userId = await this.getAuthenticatedUserId();
+    const completionsKey = this.getCacheKey(STORAGE_KEYS.COMPLETIONS, userId);
+    let localCompletions = getLocalCache<HabitLog[]>(completionsKey, []);
 
     if (!localCompletions.length) {
       const settings = StorageService.getSettings();
       if (settings && settings.isDemoMode) {
         const demoData = generateDemoDailyData();
         localCompletions = demoData.logs;
-        setLocalCache(STORAGE_KEYS.COMPLETIONS, localCompletions);
+        setLocalCache(completionsKey, localCompletions);
       }
     }
 
@@ -711,10 +826,10 @@ class HabitService {
         if (!error && data) {
           const remoteLogs = data.map(this.mapDbToCompletion);
           if (!habitId) {
-            setLocalCache(STORAGE_KEYS.COMPLETIONS, remoteLogs);
+            setLocalCache(completionsKey, remoteLogs);
           }
           this.setSyncState('synced');
-          return habitId ? remoteLogs.filter((l) => l.habitId === habitId) : remoteLogs;
+          return habitId ? remoteLogs.filter((l) => l.habitId === habitId || isMatchingDefaultHabit(l.habitId, habitId, userId)) : remoteLogs;
         }
       } catch (err) {
         console.warn('Supabase fetch completions failed, using local cache:', err);
@@ -723,7 +838,7 @@ class HabitService {
     }
 
     return habitId
-      ? localCompletions.filter((l) => l.habitId === habitId)
+      ? localCompletions.filter((l) => l.habitId === habitId || isMatchingDefaultHabit(l.habitId, habitId, userId))
       : localCompletions;
   }
 
@@ -731,17 +846,32 @@ class HabitService {
     if (!navigator.onLine || !isSupabaseConfigured() || !userId || !habitId) return;
 
     try {
+      // 1. Direct check in Supabase
       const { data } = await supabase.from('habits').select('id').eq('id', habitId).maybeSingle();
       if (data) return;
 
-      const habits = getLocalCache<Habit[]>(STORAGE_KEYS.HABITS, DEFAULT_HABITS);
-      let habit = habits.find((h) => h.id === habitId);
+      // 2. Check user-scoped habit ID in Supabase
+      const userScopedId = habitId.includes(userId) ? habitId : `${habitId}-${userId}`;
+      if (userScopedId !== habitId) {
+        const { data: scopedData } = await supabase.from('habits').select('id').eq('id', userScopedId).maybeSingle();
+        if (scopedData) return;
+      }
+
+      // 3. Fallback: retrieve habit from user's local habits cache or DEFAULT_HABITS
+      const habitsKey = this.getCacheKey(STORAGE_KEYS.HABITS, userId);
+      const habits = getLocalCache<Habit[]>(habitsKey, DEFAULT_HABITS);
+      let habit = habits.find((h) => h.id === habitId || h.id === userScopedId);
       if (!habit) {
-        habit = DEFAULT_HABITS.find((h) => h.id === habitId);
+        const defaultBase = DEFAULT_HABITS.find((h) => isMatchingDefaultHabit(h.id, habitId, userId) || isMatchingDefaultHabit(habitId, h.id, userId));
+        if (defaultBase) {
+          habit = { ...defaultBase, id: userScopedId };
+        }
       }
       if (!habit) return;
 
-      const payload = this.mapHabitToDb(habit, userId);
+      // Ensure we insert with the user-scoped ID if the static ID is being seeded for a new user
+      const habitToInsert = habit.id.includes(userId) ? habit : { ...habit, id: userScopedId };
+      const payload = this.mapHabitToDb(habitToInsert, userId);
       await supabase.from('habits').insert(payload);
     } catch {
       // Ignore conflict errors silently
@@ -754,12 +884,13 @@ class HabitService {
   }
 
   public async createCompletion(completion: HabitLog): Promise<{ completion: HabitLog; synced: boolean; error?: string }> {
-    const completions = getLocalCache<HabitLog[]>(STORAGE_KEYS.COMPLETIONS, []);
+    const userId = await this.getAuthenticatedUserId();
+    const completionsKey = this.getCacheKey(STORAGE_KEYS.COMPLETIONS, userId);
+    const completions = getLocalCache<HabitLog[]>(completionsKey, []);
     const updated = [...completions.filter((c) => c.id !== completion.id), completion];
-    setLocalCache(STORAGE_KEYS.COMPLETIONS, updated);
+    setLocalCache(completionsKey, updated);
 
     if (navigator.onLine && isSupabaseConfigured()) {
-      const userId = await this.getAuthenticatedUserId();
       if (!userId) {
         const payload = this.mapCompletionToDb(completion);
         this.enqueuePending({ id: completion.id, table: 'habit_completions', action: 'INSERT', payload });
@@ -797,7 +928,9 @@ class HabitService {
   }
 
   public async updateCompletion(id: string, updates: Partial<HabitLog>): Promise<{ completion: HabitLog | null; synced: boolean; error?: string }> {
-    const completions = getLocalCache<HabitLog[]>(STORAGE_KEYS.COMPLETIONS, []);
+    const userId = await this.getAuthenticatedUserId();
+    const completionsKey = this.getCacheKey(STORAGE_KEYS.COMPLETIONS, userId);
+    const completions = getLocalCache<HabitLog[]>(completionsKey, []);
     const existing = completions.find((c) => c.id === id);
     if (!existing) return { completion: null, synced: false, error: 'Completion log not found' };
 
@@ -808,10 +941,9 @@ class HabitService {
     };
 
     const newList = completions.map((c) => (c.id === id ? updatedLog : c));
-    setLocalCache(STORAGE_KEYS.COMPLETIONS, newList);
+    setLocalCache(completionsKey, newList);
 
     if (navigator.onLine && isSupabaseConfigured()) {
-      const userId = await this.getAuthenticatedUserId();
       if (!userId) {
         const payload = this.mapCompletionToDb(updatedLog);
         this.enqueuePending({ id, table: 'habit_completions', action: 'UPDATE', payload });
@@ -849,12 +981,13 @@ class HabitService {
   }
 
   public async deleteCompletion(id: string): Promise<{ success: boolean; synced: boolean; error?: string }> {
-    const completions = getLocalCache<HabitLog[]>(STORAGE_KEYS.COMPLETIONS, []);
+    const userId = await this.getAuthenticatedUserId();
+    const completionsKey = this.getCacheKey(STORAGE_KEYS.COMPLETIONS, userId);
+    const completions = getLocalCache<HabitLog[]>(completionsKey, []);
     const filtered = completions.filter((c) => c.id !== id);
-    setLocalCache(STORAGE_KEYS.COMPLETIONS, filtered);
+    setLocalCache(completionsKey, filtered);
 
     if (navigator.onLine && isSupabaseConfigured()) {
-      const userId = await this.getAuthenticatedUserId();
       if (!userId) {
         this.enqueuePending({ id, table: 'habit_completions', action: 'DELETE', payload: null });
         this.setSyncState('offline');
@@ -1314,14 +1447,180 @@ class HabitService {
     }
   }
 
-  public clearCache(): void {
+  // ==========================================
+  // 6. NOTES CRUD
+  // ==========================================
+  public async getNotes(): Promise<Note[]> {
+    const userId = await this.getAuthenticatedUserId();
+    const notesKey = this.getCacheKey(STORAGE_KEYS.NOTES, userId);
+    const localNotes = getLocalCache<Note[]>(notesKey, []);
+
+    if (navigator.onLine && isSupabaseConfigured()) {
+      try {
+        const { data, error } = await supabase.from('notes').select('*').order('updated_at', { ascending: false });
+        if (!error && data) {
+          const remoteNotes = data.map(this.mapDbToNote);
+          setLocalCache(notesKey, remoteNotes);
+          this.setSyncState('synced');
+          return remoteNotes;
+        }
+      } catch (err) {
+        console.warn('Supabase fetch notes failed, using local cache:', err);
+        this.setSyncState('error');
+      }
+    }
+
+    return localNotes;
+  }
+
+  public async createNote(note: Note): Promise<{ note: Note; synced: boolean; error?: string }> {
+    const userId = await this.getAuthenticatedUserId();
+    const notesKey = this.getCacheKey(STORAGE_KEYS.NOTES, userId);
+    const notes = getLocalCache<Note[]>(notesKey, []);
+    const updated = [note, ...notes.filter((n) => n.id !== note.id)];
+    setLocalCache(notesKey, updated);
+
+    if (navigator.onLine && isSupabaseConfigured()) {
+      if (!userId) {
+        const payload = this.mapNoteToDb(note);
+        this.enqueuePending({ id: note.id, table: 'notes', action: 'INSERT', payload });
+        this.setSyncState('offline');
+        return { note, synced: false, error: 'No active session' };
+      }
+
+      const payload = this.mapNoteToDb(note, userId);
+      try {
+        this.setSyncState('syncing');
+        const { data, error } = await supabase.from('notes').insert(payload).select().single();
+        if (error || !data) {
+          const errMsg = error?.message || 'Row verification failed (no data returned)';
+          console.warn('Supabase createNote error:', errMsg);
+          this.enqueuePending({ id: note.id, table: 'notes', action: 'INSERT', payload, userId });
+          this.setSyncState('error');
+          return { note, synced: false, error: errMsg };
+        } else {
+          this.setSyncState('synced');
+          return { note, synced: true };
+        }
+      } catch (err: any) {
+        this.enqueuePending({ id: note.id, table: 'notes', action: 'INSERT', payload, userId });
+        this.setSyncState('error');
+        return { note, synced: false, error: err.message || 'Network error' };
+      }
+    } else {
+      const payload = this.mapNoteToDb(note);
+      this.enqueuePending({ id: note.id, table: 'notes', action: 'INSERT', payload });
+      this.setSyncState('offline');
+      return { note, synced: false };
+    }
+  }
+
+  public async updateNote(id: string, updates: Partial<Note>): Promise<{ note: Note | null; synced: boolean; error?: string }> {
+    const userId = await this.getAuthenticatedUserId();
+    const notesKey = this.getCacheKey(STORAGE_KEYS.NOTES, userId);
+    const notes = getLocalCache<Note[]>(notesKey, []);
+    const existing = notes.find((n) => n.id === id);
+    if (!existing) return { note: null, synced: false, error: 'Note not found' };
+
+    const updatedNote: Note = {
+      ...existing,
+      ...updates,
+      updatedDate: new Date().toISOString(),
+    };
+
+    const newList = notes.map((n) => (n.id === id ? updatedNote : n));
+    setLocalCache(notesKey, newList);
+
+    if (navigator.onLine && isSupabaseConfigured()) {
+      if (!userId) {
+        const payload = this.mapNoteToDb(updatedNote);
+        this.enqueuePending({ id, table: 'notes', action: 'UPDATE', payload });
+        this.setSyncState('offline');
+        return { note: updatedNote, synced: false, error: 'No active session' };
+      }
+
+      const payload = this.mapNoteToDb(updatedNote, userId);
+      try {
+        this.setSyncState('syncing');
+        const { data, error } = await supabase.from('notes').upsert(payload).select().single();
+        if (error || !data) {
+          const errMsg = error?.message || 'Row verification failed (no data returned)';
+          console.warn('Supabase updateNote error:', errMsg);
+          this.enqueuePending({ id, table: 'notes', action: 'UPDATE', payload, userId });
+          this.setSyncState('error');
+          return { note: updatedNote, synced: false, error: errMsg };
+        } else {
+          this.setSyncState('synced');
+          return { note: updatedNote, synced: true };
+        }
+      } catch (err: any) {
+        this.enqueuePending({ id, table: 'notes', action: 'UPDATE', payload, userId });
+        this.setSyncState('error');
+        return { note: updatedNote, synced: false, error: err.message || 'Network error' };
+      }
+    } else {
+      const payload = this.mapNoteToDb(updatedNote);
+      this.enqueuePending({ id, table: 'notes', action: 'UPDATE', payload });
+      this.setSyncState('offline');
+      return { note: updatedNote, synced: false };
+    }
+  }
+
+  public async deleteNote(id: string): Promise<{ success: boolean; synced: boolean; error?: string }> {
+    const userId = await this.getAuthenticatedUserId();
+    const notesKey = this.getCacheKey(STORAGE_KEYS.NOTES, userId);
+    const list = getLocalCache<Note[]>(notesKey, []);
+    const filtered = list.filter((n) => n.id !== id);
+    setLocalCache(notesKey, filtered);
+
+    if (navigator.onLine && isSupabaseConfigured()) {
+      if (!userId) {
+        this.enqueuePending({ id, table: 'notes', action: 'DELETE', payload: null });
+        this.setSyncState('offline');
+        return { success: true, synced: false, error: 'No active session' };
+      }
+
+      try {
+        this.setSyncState('syncing');
+        const { error } = await supabase.from('notes').delete().eq('id', id);
+        if (error) {
+          this.enqueuePending({ id, table: 'notes', action: 'DELETE', payload: null, userId });
+          this.setSyncState('error');
+          return { success: true, synced: false, error: error.message };
+        } else {
+          this.setSyncState('synced');
+          return { success: true, synced: true };
+        }
+      } catch (err: any) {
+        this.enqueuePending({ id, table: 'notes', action: 'DELETE', payload: null, userId });
+        this.setSyncState('error');
+        return { success: true, synced: false, error: err.message || 'Network error' };
+      }
+    } else {
+      this.enqueuePending({ id, table: 'notes', action: 'DELETE', payload: null });
+      this.setSyncState('offline');
+      return { success: true, synced: false };
+    }
+  }
+
+  public async clearCache(): Promise<void> {
     this.unsubscribeRealtime();
-    localStorage.removeItem(STORAGE_KEYS.HABITS);
-    localStorage.removeItem(STORAGE_KEYS.COMPLETIONS);
-    localStorage.removeItem(STORAGE_KEYS.CHALLENGE);
-    localStorage.removeItem(STORAGE_KEYS.TASKS);
-    localStorage.removeItem(STORAGE_KEYS.EXPENSES);
-    localStorage.removeItem(STORAGE_KEYS.PENDING_SYNC);
+    const userId = await this.getAuthenticatedUserId();
+    const keysToRemove = [
+      STORAGE_KEYS.HABITS,
+      STORAGE_KEYS.COMPLETIONS,
+      STORAGE_KEYS.CHALLENGE,
+      STORAGE_KEYS.TASKS,
+      STORAGE_KEYS.EXPENSES,
+      STORAGE_KEYS.NOTES,
+      STORAGE_KEYS.PENDING_SYNC,
+    ];
+    for (const key of keysToRemove) {
+      localStorage.removeItem(key);
+      if (userId) {
+        localStorage.removeItem(`${key}_${userId}`);
+      }
+    }
   }
 }
 

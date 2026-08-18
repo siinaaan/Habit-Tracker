@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { Card, CardTitle } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { BreakGames } from './games/BreakGames';
+import { isMatchingDefaultHabit } from '../../utils/habitUtils';
 import {
   Play,
   Pause,
@@ -195,7 +196,7 @@ export const PomodoroTimer: React.FC = () => {
         setSessionCount(newCount);
 
         // Auto record session to habit log for today
-        const todayLog = selectedDayLogs.find((l) => l.habitId === 'habit-pomodoro');
+        const todayLog = selectedDayLogs.find((l) => isMatchingDefaultHabit(l.habitId, 'habit-pomodoro'));
         const existingSessions = todayLog?.numericValue ?? 0;
         const updatedTotal = existingSessions + 1;
 
@@ -357,7 +358,7 @@ export const PomodoroTimer: React.FC = () => {
 
   const handleManualAdd = () => {
     if (manualCount <= 0) return;
-    const todayLog = selectedDayLogs.find((l) => l.habitId === 'habit-pomodoro');
+    const todayLog = selectedDayLogs.find((l) => isMatchingDefaultHabit(l.habitId, 'habit-pomodoro'));
     const currentSessions = todayLog?.numericValue ?? 0;
     const updatedCount = currentSessions + manualCount;
 
@@ -371,7 +372,7 @@ export const PomodoroTimer: React.FC = () => {
 
   const handleManualSubtract = () => {
     if (manualCount <= 0) return;
-    const todayLog = selectedDayLogs.find((l) => l.habitId === 'habit-pomodoro');
+    const todayLog = selectedDayLogs.find((l) => isMatchingDefaultHabit(l.habitId, 'habit-pomodoro'));
     const currentSessions = todayLog?.numericValue ?? 0;
     const updatedCount = Math.max(0, currentSessions - manualCount);
 
@@ -392,10 +393,10 @@ export const PomodoroTimer: React.FC = () => {
 
   // Calculate total sessions from all logs
   const totalLoggedSessions = logs
-    .filter((l) => l.habitId === 'habit-pomodoro')
+    .filter((l) => isMatchingDefaultHabit(l.habitId, 'habit-pomodoro'))
     .reduce((acc, l) => acc + (l.numericValue || 0), 0);
 
-  const todayLog = selectedDayLogs.find((l) => l.habitId === 'habit-pomodoro');
+  const todayLog = selectedDayLogs.find((l) => isMatchingDefaultHabit(l.habitId, 'habit-pomodoro'));
   const todayPomodoros = todayLog?.numericValue ?? 0;
 
   return (

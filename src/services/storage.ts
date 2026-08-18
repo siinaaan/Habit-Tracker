@@ -9,6 +9,7 @@ import type {
   TaskItem,
   AppSettings,
   ExpenseTransaction,
+  Note,
 } from '../types';
 import { DEFAULT_HABITS } from '../constants/defaultHabits';
 
@@ -23,6 +24,7 @@ const KEYS = {
   TASKS: 'life_upgrade_tasks_cache',
   SETTINGS: 'life_upgrade_settings',
   EXPENSES: 'life_upgrade_expenses_cache',
+  NOTES: 'life_upgrade_notes_cache',
 };
 
 // Safe JSON parser
@@ -330,6 +332,30 @@ export class StorageService {
     setItem(KEYS.EXPENSES, expenses);
   }
 
+  // --- Notes ---
+  static getNotes(): Note[] {
+    return getItem<Note[]>(KEYS.NOTES, []);
+  }
+
+  static saveNote(note: Note): Note {
+    const notes = this.getNotes();
+    const idx = notes.findIndex((n) => n.id === note.id);
+    let updated: Note[];
+    if (idx >= 0) {
+      notes[idx] = { ...note, updatedDate: new Date().toISOString() };
+      updated = [...notes];
+    } else {
+      updated = [...notes, note];
+    }
+    setItem(KEYS.NOTES, updated);
+    return note;
+  }
+
+  static deleteNote(id: string): void {
+    const notes = this.getNotes().filter((n) => n.id !== id);
+    setItem(KEYS.NOTES, notes);
+  }
+
   // --- Settings ---
   static getSettings(): AppSettings {
     return getItem<AppSettings>(KEYS.SETTINGS, DEFAULT_SETTINGS);
@@ -353,6 +379,7 @@ export class StorageService {
       reflections: this.getReflections(),
       learning: this.getLearningItems(),
       expenses: this.getExpenses(),
+      notes: this.getNotes(),
       settings: this.getSettings(),
     };
     return JSON.stringify(backupData, null, 2);
@@ -404,6 +431,7 @@ export class StorageService {
       if (Array.isArray(parsed.reflections)) setItem(KEYS.REFLECTIONS, parsed.reflections);
       if (Array.isArray(parsed.learning)) setItem(KEYS.LEARNING, parsed.learning);
       if (Array.isArray(parsed.expenses)) setItem(KEYS.EXPENSES, parsed.expenses);
+      if (Array.isArray(parsed.notes)) setItem(KEYS.NOTES, parsed.notes);
       if (parsed.settings && typeof parsed.settings === 'object') setItem(KEYS.SETTINGS, parsed.settings);
 
       return { success: true, message: 'Data imported successfully!' };
@@ -463,6 +491,7 @@ export class StorageService {
     localStorage.removeItem(KEYS.TASKS);
     localStorage.removeItem(KEYS.SETTINGS);
     localStorage.removeItem(KEYS.EXPENSES);
+    localStorage.removeItem(KEYS.NOTES);
 
     // Clear habitService caches
     localStorage.removeItem('life_upgrade_habits_cache');
@@ -470,6 +499,7 @@ export class StorageService {
     localStorage.removeItem('life_upgrade_challenge_cache');
     localStorage.removeItem('life_upgrade_tasks_cache');
     localStorage.removeItem('life_upgrade_expenses_cache');
+    localStorage.removeItem('life_upgrade_notes_cache');
     localStorage.removeItem('life_upgrade_pending_sync_queue');
   }
 }
