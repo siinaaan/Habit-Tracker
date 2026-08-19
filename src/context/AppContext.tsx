@@ -343,26 +343,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateHabitLog = async (habitId: string, logData: Partial<HabitLog>) => {
     const userId = await habitService.getAuthenticatedUserId();
     const challenge = activeChallenge || StorageService.getActiveChallenge(userId);
-    if (!challenge) return;
+
+    const todayStr = getTodayLocalDateStr();
+    const isLocked = selectedDate < todayStr;
 
     // Action-level enforcement: Reject modifications for locked previous dates
-    if (selectedDate < getTodayLocalDateStr()) {
+    if (isLocked) {
       showToast('🔒 Previous day records are locked and read-only.', 'warning');
       return;
     }
 
     const trackerId = `tracker-${selectedDate}`;
     let tracker = trackers.find((t) => t.date === selectedDate || t.id === trackerId);
-    const dayNum = AnalyticsService.calculateDayNumber(
-      challenge.startDate,
-      selectedDate
-    );
+    const dayNum = challenge
+      ? AnalyticsService.calculateDayNumber(challenge.startDate, selectedDate)
+      : 1;
 
     // If tracker doesn't exist yet for selected date, create it
     if (!tracker) {
       tracker = {
         id: trackerId,
-        challengeId: challenge.id,
+        challengeId: challenge?.id || 'general',
         dayNumber: dayNum,
         date: selectedDate,
         completionPercentage: 0,
@@ -444,7 +445,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (newCompletion === 100 && tracker.completionPercentage < 100) {
       triggerConfetti();
-      showToast(`🔥 Boom! Day ${dayNum} 100% Completed!`, 'success');
+      showToast(challenge ? `🔥 Boom! Day ${dayNum} 100% Completed!` : `🔥 Boom! Today's Habits 100% Completed!`, 'success');
     }
 
     // 3. Sync to Supabase in background with error handling & state rollback

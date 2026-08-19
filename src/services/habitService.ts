@@ -4,7 +4,7 @@ import type { Habit, HabitLog, Challenge, TaskItem, ExpenseTransaction, Note } f
 import { DEFAULT_HABITS } from '../constants/defaultHabits';
 import { generateDemoDailyData } from '../constants/initialDemoData';
 import { StorageService } from './storage';
-import { isMatchingDefaultHabit } from '../utils/habitUtils';
+import { isMatchingDefaultHabit, resolveHabitId } from '../utils/habitUtils';
 
 export type SyncState = 'synced' | 'syncing' | 'offline' | 'error';
 
@@ -819,18 +819,39 @@ class HabitService {
       }
     }
 
+    const userHabits = await this.getHabits();
+
+    const normalizeLogs = (logs: HabitLog[]): HabitLog[] => {
+      return logs.map((log) => {
+        const canonicalId = resolveHabitId(log.habitId, userHabits, userId);
+        return {
+          ...log,
+          habitId: canonicalId,
+          id: log.id.includes(log.habitId)
+            ? log.id.replace(log.habitId, canonicalId)
+            : `log-${log.dailyTrackerId}-${canonicalId}`,
+        };
+      });
+    };
+
     if (navigator.onLine && isSupabaseConfigured()) {
       try {
         let query = supabase.from('habit_completions').select('*');
-        if (habitId) query = query.eq('habit_id', habitId);
+        if (habitId) {
+          const canonicalTarget = resolveHabitId(habitId, userHabits, userId);
+          query = query.or(`habit_id.eq.${habitId},habit_id.eq.${canonicalTarget}`);
+        }
         const { data, error } = await query;
         if (!error && data) {
-          const remoteLogs = data.map(this.mapDbToCompletion);
+          const rawLogs = data.map(this.mapDbToCompletion);
+          const remoteLogs = normalizeLogs(rawLogs);
           if (!habitId) {
             setLocalCache(completionsKey, remoteLogs);
           }
           this.setSyncState('synced');
-          return habitId ? remoteLogs.filter((l) => l.habitId === habitId || isMatchingDefaultHabit(l.habitId, habitId, userId)) : remoteLogs;
+          return habitId
+            ? remoteLogs.filter((l) => l.habitId === habitId || isMatchingDefaultHabit(l.habitId, habitId, userId))
+            : remoteLogs;
         }
       } catch (err) {
         console.warn('Supabase fetch completions failed, using local cache:', err);
@@ -838,9 +859,10 @@ class HabitService {
       }
     }
 
+    const normalizedLocal = normalizeLogs(localCompletions);
     return habitId
-      ? localCompletions.filter((l) => l.habitId === habitId || isMatchingDefaultHabit(l.habitId, habitId, userId))
-      : localCompletions;
+      ? normalizedLocal.filter((l) => l.habitId === habitId || isMatchingDefaultHabit(l.habitId, habitId, userId))
+      : normalizedLocal;
   }
 
   private async ensureHabitExistsInSupabase(habitId: string, userId: string): Promise<void> {
@@ -886,82 +908,107 @@ class HabitService {
 
   public async createCompletion(completion: HabitLog): Promise<{ completion: HabitLog; synced: boolean; error?: string }> {
     const userId = await this.getAuthenticatedUserId();
+    const userHabits = await this.getHabits();
+    const canonicalHabitId = resolveHabitId(completion.habitId, userHabits, userId);
+
+    const canonicalCompletion: HabitLog = {
+      ...completion,
+      habitId: canonicalHabitId,
+      id: `log-${completion.dailyTrackerId}-${canonicalHabitId}`,
+    };
+
     const completionsKey = this.getCacheKey(STORAGE_KEYS.COMPLETIONS, userId);
     const completions = getLocalCache<HabitLog[]>(completionsKey, []);
-    const updated = [...completions.filter((c) => c.id !== completion.id), completion];
+    const updated = [
+      ...completions.filter((c) => c.id !== canonicalCompletion.id && !isMatchingDefaultHabit(c.habitId, canonicalHabitId, userId)),
+      canonicalCompletion,
+    ];
     setLocalCache(completionsKey, updated);
 
     if (navigator.onLine && isSupabaseConfigured()) {
       if (!userId) {
-        const payload = this.mapCompletionToDb(completion);
-        this.enqueuePending({ id: completion.id, table: 'habit_completions', action: 'INSERT', payload });
+        const payload = this.mapCompletionToDb(canonicalCompletion);
+        this.enqueuePending({ id: canonicalCompletion.id, table: 'habit_completions', action: 'INSERT', payload });
         this.setSyncState('offline');
-        return { completion, synced: false, error: 'No active session' };
+        return { completion: canonicalCompletion, synced: false, error: 'No active session' };
       }
 
-      await this.ensureHabitExistsInSupabase(completion.habitId, userId);
+      await this.ensureHabitExistsInSupabase(canonicalHabitId, userId);
 
-      const payload = this.mapCompletionToDb(completion, userId);
+      const payload = this.mapCompletionToDb(canonicalCompletion, userId);
       try {
         this.setSyncState('syncing');
-        const { data, error } = await supabase.from('habit_completions').insert(payload).select().single();
+        const { data, error } = await supabase.from('habit_completions').upsert(payload).select().single();
+
         if (error || !data) {
           const errMsg = error?.message || 'Row verification failed (no data returned)';
           console.warn('Supabase createCompletion error:', errMsg);
-          this.enqueuePending({ id: completion.id, table: 'habit_completions', action: 'INSERT', payload, userId });
+          this.enqueuePending({ id: canonicalCompletion.id, table: 'habit_completions', action: 'INSERT', payload, userId });
           this.setSyncState('error');
-          return { completion, synced: false, error: errMsg };
+          return { completion: canonicalCompletion, synced: false, error: errMsg };
         } else {
           this.setSyncState('synced');
-          return { completion, synced: true };
+          return { completion: canonicalCompletion, synced: true };
         }
       } catch (err: any) {
-        this.enqueuePending({ id: completion.id, table: 'habit_completions', action: 'INSERT', payload, userId });
+        this.enqueuePending({ id: canonicalCompletion.id, table: 'habit_completions', action: 'INSERT', payload, userId });
         this.setSyncState('error');
-        return { completion, synced: false, error: err.message || 'Network error' };
+        return { completion: canonicalCompletion, synced: false, error: err.message || 'Network error' };
       }
     } else {
-      const payload = this.mapCompletionToDb(completion);
-      this.enqueuePending({ id: completion.id, table: 'habit_completions', action: 'INSERT', payload });
+      const payload = this.mapCompletionToDb(canonicalCompletion);
+      this.enqueuePending({ id: canonicalCompletion.id, table: 'habit_completions', action: 'INSERT', payload });
       this.setSyncState('offline');
-      return { completion, synced: false };
+      return { completion: canonicalCompletion, synced: false };
     }
   }
 
   public async updateCompletion(id: string, updates: Partial<HabitLog>): Promise<{ completion: HabitLog | null; synced: boolean; error?: string }> {
     const userId = await this.getAuthenticatedUserId();
+    const userHabits = await this.getHabits();
     const completionsKey = this.getCacheKey(STORAGE_KEYS.COMPLETIONS, userId);
     const completions = getLocalCache<HabitLog[]>(completionsKey, []);
-    const existing = completions.find((c) => c.id === id);
+    
+    let existing = completions.find((c) => c.id === id);
+    if (!existing && updates.habitId) {
+      const canonical = resolveHabitId(updates.habitId, userHabits, userId);
+      existing = completions.find((c) => c.habitId === canonical || isMatchingDefaultHabit(c.habitId, canonical, userId));
+    }
+
     if (!existing) return { completion: null, synced: false, error: 'Completion log not found' };
+
+    const canonicalHabitId = resolveHabitId(updates.habitId || existing.habitId, userHabits, userId);
 
     const updatedLog: HabitLog = {
       ...existing,
       ...updates,
+      habitId: canonicalHabitId,
+      id: `log-${existing.dailyTrackerId}-${canonicalHabitId}`,
       updatedDate: new Date().toISOString(),
     };
 
-    const newList = completions.map((c) => (c.id === id ? updatedLog : c));
+    const newList = completions.map((c) => (c.id === existing!.id || c.id === updatedLog.id ? updatedLog : c));
     setLocalCache(completionsKey, newList);
 
     if (navigator.onLine && isSupabaseConfigured()) {
       if (!userId) {
         const payload = this.mapCompletionToDb(updatedLog);
-        this.enqueuePending({ id, table: 'habit_completions', action: 'UPDATE', payload });
+        this.enqueuePending({ id: updatedLog.id, table: 'habit_completions', action: 'UPDATE', payload });
         this.setSyncState('offline');
         return { completion: updatedLog, synced: false, error: 'No active session' };
       }
 
-      await this.ensureHabitExistsInSupabase(updatedLog.habitId, userId);
+      await this.ensureHabitExistsInSupabase(canonicalHabitId, userId);
 
       const payload = this.mapCompletionToDb(updatedLog, userId);
       try {
         this.setSyncState('syncing');
         const { data, error } = await supabase.from('habit_completions').upsert(payload).select().single();
+
         if (error || !data) {
           const errMsg = error?.message || 'Row verification failed (no data returned)';
           console.warn('Supabase updateCompletion error:', errMsg);
-          this.enqueuePending({ id, table: 'habit_completions', action: 'UPDATE', payload, userId });
+          this.enqueuePending({ id: updatedLog.id, table: 'habit_completions', action: 'UPDATE', payload, userId });
           this.setSyncState('error');
           return { completion: updatedLog, synced: false, error: errMsg };
         } else {
@@ -969,13 +1016,13 @@ class HabitService {
           return { completion: updatedLog, synced: true };
         }
       } catch (err: any) {
-        this.enqueuePending({ id, table: 'habit_completions', action: 'UPDATE', payload, userId });
+        this.enqueuePending({ id: updatedLog.id, table: 'habit_completions', action: 'UPDATE', payload, userId });
         this.setSyncState('error');
         return { completion: updatedLog, synced: false, error: err.message || 'Network error' };
       }
     } else {
       const payload = this.mapCompletionToDb(updatedLog);
-      this.enqueuePending({ id, table: 'habit_completions', action: 'UPDATE', payload });
+      this.enqueuePending({ id: updatedLog.id, table: 'habit_completions', action: 'UPDATE', payload });
       this.setSyncState('offline');
       return { completion: updatedLog, synced: false };
     }
@@ -998,6 +1045,7 @@ class HabitService {
       try {
         this.setSyncState('syncing');
         const { error } = await supabase.from('habit_completions').delete().eq('id', id);
+
         if (error) {
           this.enqueuePending({ id, table: 'habit_completions', action: 'DELETE', payload: null, userId });
           this.setSyncState('error');
