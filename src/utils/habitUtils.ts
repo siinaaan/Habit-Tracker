@@ -13,6 +13,12 @@ export function isMatchingDefaultHabit(
   if (!targetId || !baseId) return false;
   if (targetId === baseId) return true;
   if (userId && targetId === `${baseId}-${userId}`) return true;
+  if (userId && baseId === `${targetId}-${userId}`) return true;
+
+  // Extract base prefix if targetId or baseId ends with userId or UUID pattern
+  const cleanTarget = userId ? targetId.replace(`-${userId}`, '') : targetId;
+  const cleanBase = userId ? baseId.replace(`-${userId}`, '') : baseId;
+  if (cleanTarget === cleanBase) return true;
 
   // Strict check: if targetId starts with baseId + '-', ensure suffix is NOT custom
   if (targetId.startsWith(`${baseId}-`)) {
@@ -20,8 +26,18 @@ export function isMatchingDefaultHabit(
     if (suffix.startsWith('custom') || suffix.includes('custom')) {
       return false;
     }
-    return suffix.length >= 6;
+    return suffix.length >= 5;
   }
+
+  // Strict check: if baseId starts with targetId + '-'
+  if (baseId.startsWith(`${targetId}-`)) {
+    const suffix = baseId.slice(targetId.length + 1);
+    if (suffix.startsWith('custom') || suffix.includes('custom')) {
+      return false;
+    }
+    return suffix.length >= 5;
+  }
+
   return false;
 }
 

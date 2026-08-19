@@ -27,6 +27,11 @@ const KEYS = {
   NOTES: 'life_upgrade_notes_cache',
 };
 
+function getCacheKey(baseKey: string, userId?: string | null): string {
+  if (userId) return `${baseKey}_${userId}`;
+  return baseKey;
+}
+
 // Safe JSON parser
 function getItem<T>(key: string, fallback: T): T {
   try {
@@ -102,17 +107,18 @@ export class StorageService {
   }
 
   // --- Challenges ---
-  static getChallenges(): Challenge[] {
-    return getItem<Challenge[]>(KEYS.CHALLENGES, []);
+  static getChallenges(userId?: string | null): Challenge[] {
+    return getItem<Challenge[]>(getCacheKey(KEYS.CHALLENGES, userId), []);
   }
 
-  static getActiveChallenge(): Challenge | null {
-    const challenges = this.getChallenges();
+  static getActiveChallenge(userId?: string | null): Challenge | null {
+    const challenges = this.getChallenges(userId);
     return challenges.find((c) => c.status === 'Active') || challenges[0] || null;
   }
 
-  static saveChallenge(challenge: Challenge): Challenge {
-    const challenges = this.getChallenges();
+  static saveChallenge(challenge: Challenge, userId?: string | null): Challenge {
+    const key = getCacheKey(KEYS.CHALLENGES, userId);
+    const challenges = getItem<Challenge[]>(key, []);
     const idx = challenges.findIndex((c) => c.id === challenge.id);
     let updated: Challenge[];
     if (idx >= 0) {
@@ -121,22 +127,24 @@ export class StorageService {
     } else {
       updated = [...challenges, challenge];
     }
-    setItem(KEYS.CHALLENGES, updated);
+    setItem(key, updated);
     return challenge;
   }
 
-  static deleteChallenge(id: string): void {
-    const challenges = this.getChallenges().filter((c) => c.id !== id);
-    setItem(KEYS.CHALLENGES, challenges);
+  static deleteChallenge(id: string, userId?: string | null): void {
+    const key = getCacheKey(KEYS.CHALLENGES, userId);
+    const challenges = getItem<Challenge[]>(key, []).filter((c) => c.id !== id);
+    setItem(key, challenges);
   }
 
   // --- Habits ---
-  static getHabits(): Habit[] {
-    return getItem<Habit[]>(KEYS.HABITS, DEFAULT_HABITS);
+  static getHabits(userId?: string | null): Habit[] {
+    return getItem<Habit[]>(getCacheKey(KEYS.HABITS, userId), DEFAULT_HABITS);
   }
 
-  static saveHabit(habit: Habit): Habit {
-    const habits = this.getHabits();
+  static saveHabit(habit: Habit, userId?: string | null): Habit {
+    const key = getCacheKey(KEYS.HABITS, userId);
+    const habits = getItem<Habit[]>(key, DEFAULT_HABITS);
     const idx = habits.findIndex((h) => h.id === habit.id);
     let updated: Habit[];
     if (idx >= 0) {
@@ -145,26 +153,28 @@ export class StorageService {
     } else {
       updated = [...habits, habit];
     }
-    setItem(KEYS.HABITS, updated);
+    setItem(key, updated);
     return habit;
   }
 
-  static saveHabits(habits: Habit[]): void {
-    setItem(KEYS.HABITS, habits);
+  static saveHabits(habits: Habit[], userId?: string | null): void {
+    setItem(getCacheKey(KEYS.HABITS, userId), habits);
   }
 
-  static deleteHabit(id: string): void {
-    const habits = this.getHabits().filter((h) => h.id !== id);
-    setItem(KEYS.HABITS, habits);
+  static deleteHabit(id: string, userId?: string | null): void {
+    const key = getCacheKey(KEYS.HABITS, userId);
+    const habits = getItem<Habit[]>(key, DEFAULT_HABITS).filter((h) => h.id !== id);
+    setItem(key, habits);
   }
 
   // --- Daily Trackers ---
-  static getTrackers(): DailyTracker[] {
-    return getItem<DailyTracker[]>(KEYS.TRACKERS, []);
+  static getTrackers(userId?: string | null): DailyTracker[] {
+    return getItem<DailyTracker[]>(getCacheKey(KEYS.TRACKERS, userId), []);
   }
 
-  static saveTracker(tracker: DailyTracker): DailyTracker {
-    const trackers = this.getTrackers();
+  static saveTracker(tracker: DailyTracker, userId?: string | null): DailyTracker {
+    const key = getCacheKey(KEYS.TRACKERS, userId);
+    const trackers = getItem<DailyTracker[]>(key, []);
     const idx = trackers.findIndex((t) => t.id === tracker.id);
     let updated: DailyTracker[];
     if (idx >= 0) {
@@ -173,26 +183,28 @@ export class StorageService {
     } else {
       updated = [...trackers, tracker];
     }
-    setItem(KEYS.TRACKERS, updated);
+    setItem(key, updated);
     return tracker;
   }
 
-  static deleteTracker(id: string): void {
-    const trackers = this.getTrackers().filter((t) => t.id !== id);
-    setItem(KEYS.TRACKERS, trackers);
+  static deleteTracker(id: string, userId?: string | null): void {
+    const key = getCacheKey(KEYS.TRACKERS, userId);
+    const trackers = getItem<DailyTracker[]>(key, []).filter((t) => t.id !== id);
+    setItem(key, trackers);
 
     // Clean up habit logs associated with this tracker
-    const logs = this.getLogs().filter((l) => l.dailyTrackerId !== id);
-    setItem(KEYS.LOGS, logs);
+    const logs = this.getLogs(userId).filter((l) => l.dailyTrackerId !== id);
+    this.saveLogs(logs, userId);
   }
 
   // --- Habit Logs ---
-  static getLogs(): HabitLog[] {
-    return getItem<HabitLog[]>(KEYS.LOGS, []);
+  static getLogs(userId?: string | null): HabitLog[] {
+    return getItem<HabitLog[]>(getCacheKey(KEYS.LOGS, userId), []);
   }
 
-  static saveLog(log: HabitLog): HabitLog {
-    const logs = this.getLogs();
+  static saveLog(log: HabitLog, userId?: string | null): HabitLog {
+    const key = getCacheKey(KEYS.LOGS, userId);
+    const logs = getItem<HabitLog[]>(key, []);
     const idx = logs.findIndex((l) => l.id === log.id);
     let updated: HabitLog[];
     if (idx >= 0) {
@@ -201,15 +213,22 @@ export class StorageService {
     } else {
       updated = [...logs, log];
     }
-    setItem(KEYS.LOGS, updated);
+    setItem(key, updated);
     return log;
   }
 
-  static saveLogs(newLogs: HabitLog[]): void {
-    const existingLogs = this.getLogs();
+  static saveLogs(newLogs: HabitLog[], userId?: string | null): void {
+    const key = getCacheKey(KEYS.LOGS, userId);
+    const existingLogs = getItem<HabitLog[]>(key, []);
     const logMap = new Map<string, HabitLog>(existingLogs.map((l) => [l.id, l]));
     newLogs.forEach((l) => logMap.set(l.id, { ...l, updatedDate: new Date().toISOString() }));
-    setItem(KEYS.LOGS, Array.from(logMap.values()));
+    setItem(key, Array.from(logMap.values()));
+  }
+
+  static deleteLog(id: string, userId?: string | null): void {
+    const key = getCacheKey(KEYS.LOGS, userId);
+    const logs = getItem<HabitLog[]>(key, []).filter((l) => l.id !== id);
+    setItem(key, logs);
   }
 
   // --- Goals ---

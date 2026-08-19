@@ -294,7 +294,7 @@ class HabitService {
       return;
     }
 
-    const queue = this.getPendingQueue();
+    const queue = this.getPendingQueue(currentUserId);
     if (queue.length === 0) {
       this.setSyncState('synced');
       return;
@@ -342,7 +342,8 @@ class HabitService {
       }
     }
 
-    setLocalCache(STORAGE_KEYS.PENDING_SYNC, remainingQueue);
+    const pendingKey = this.getCacheKey(STORAGE_KEYS.PENDING_SYNC, currentUserId);
+    setLocalCache(pendingKey, remainingQueue);
     this.isSyncing = false;
 
     if (remainingQueue.length > 0) {

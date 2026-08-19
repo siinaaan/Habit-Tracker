@@ -167,6 +167,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const refreshAllState = async () => {
     StorageService.initializeStorage();
 
+    const userId = await habitService.getAuthenticatedUserId();
     const fetchedChallenge = await habitService.getChallengeProgress();
     const fetchedHabits = await habitService.getHabits();
     const fetchedLogs = await habitService.getHabitCompletions();
@@ -174,14 +175,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const fetchedExpenses = await habitService.getExpenses();
     const fetchedNotes = await habitService.getNotes();
 
-    setActiveChallengeState(fetchedChallenge || StorageService.getActiveChallenge());
+    setActiveChallengeState(fetchedChallenge || StorageService.getActiveChallenge(userId));
     setHabitsState(fetchedHabits);
     setLogsState(fetchedLogs);
     setTasksState(fetchedTasks);
     setExpensesState(fetchedExpenses);
     setNotesState(fetchedNotes);
     
-    setTrackersState(StorageService.getTrackers());
+    setTrackersState(StorageService.getTrackers(userId));
     setGoalsState(StorageService.getGoals());
     setReflectionsState(StorageService.getReflections());
     setLearningItemsState(StorageService.getLearningItems());
@@ -340,7 +341,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Instant Habit Logging for current selected date
   const updateHabitLog = async (habitId: string, logData: Partial<HabitLog>) => {
-    if (!activeChallenge) return;
+    const userId = await habitService.getAuthenticatedUserId();
+    const challenge = activeChallenge || StorageService.getActiveChallenge(userId);
+    if (!challenge) return;
 
     // Action-level enforcement: Reject modifications for locked previous dates
     if (selectedDate < getTodayLocalDateStr()) {
@@ -351,7 +354,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const trackerId = `tracker-${selectedDate}`;
     let tracker = trackers.find((t) => t.date === selectedDate || t.id === trackerId);
     const dayNum = AnalyticsService.calculateDayNumber(
-      activeChallenge.startDate,
+      challenge.startDate,
       selectedDate
     );
 
@@ -359,7 +362,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!tracker) {
       tracker = {
         id: trackerId,
-        challengeId: activeChallenge.id,
+        challengeId: challenge.id,
         dayNumber: dayNum,
         date: selectedDate,
         completionPercentage: 0,
@@ -367,20 +370,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createdDate: new Date().toISOString(),
         updatedDate: new Date().toISOString(),
       };
-      StorageService.saveTracker(tracker);
-      setTrackersState(StorageService.getTrackers());
+      StorageService.saveTracker(tracker, userId);
+      setTrackersState(StorageService.getTrackers(userId));
     }
 
-    const effectiveHabitId = resolveHabitId(habitId, habits);
+    const effectiveHabitId = resolveHabitId(habitId, habits, userId);
 
     // Synchronous local lookup to prevent race conditions on rapid clicks
-    const localLogs = StorageService.getLogs();
+    const localLogs = StorageService.getLogs(userId);
     let existingLog = localLogs.find(
       (l) =>
         (l.dailyTrackerId === tracker!.id ||
           l.dailyTrackerId === selectedDate ||
           l.dailyTrackerId.includes(selectedDate)) &&
-        (l.habitId === effectiveHabitId || isMatchingDefaultHabit(l.habitId, habitId))
+        (l.habitId === effectiveHabitId || isMatchingDefaultHabit(l.habitId, habitId, userId))
     );
 
     const isNew = !existingLog;
@@ -405,7 +408,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     // 1. Immediately persist to localStorage & update React state optimistically
-    StorageService.saveLog(updatedLog);
+    StorageService.saveLog(updatedLog, userId);
     setLogsState((prev) => {
       const idx = prev.findIndex((l) => l.id === updatedLog.id);
       if (idx >= 0) {
@@ -417,7 +420,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     // 2. Re-evaluate tracker completion percentage
-    const allLogsForTracker = StorageService.getLogs().filter(
+    const allLogsForTracker = StorageService.getLogs(userId).filter(
       (l) =>
         l.dailyTrackerId === tracker!.id ||
         l.dailyTrackerId === selectedDate ||
@@ -436,21 +439,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updatedDate: new Date().toISOString(),
     };
 
-    StorageService.saveTracker(updatedTracker);
-    setTrackersState(StorageService.getTrackers());
+    StorageService.saveTracker(updatedTracker, userId);
+    setTrackersState(StorageService.getTrackers(userId));
 
     if (newCompletion === 100 && tracker.completionPercentage < 100) {
       triggerConfetti();
       showToast(`🔥 Boom! Day ${dayNum} 100% Completed!`, 'success');
     }
 
-    // 3. Sync to Supabase in background
+    // 3. Sync to Supabase in background with error handling & state rollback
     const res = isNew
       ? await habitService.createCompletion(updatedLog)
       : await habitService.updateCompletion(updatedLog.id, updatedLog);
 
     if (res.error) {
       console.warn('Habit completion sync warning:', res.error);
+      showToast(`Failed to save check-in: ${res.error}`, 'error');
+      // Rollback optimistic state if sync failed
+      if (existingLog) {
+        StorageService.saveLog(existingLog, userId);
+        setLogsState((prev) => prev.map((l) => (l.id === existingLog!.id ? existingLog! : l)));
+      } else {
+        StorageService.deleteLog(updatedLog.id, userId);
+        setLogsState((prev) => prev.filter((l) => l.id !== updatedLog.id));
+      }
     }
   };
 
