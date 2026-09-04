@@ -38,6 +38,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [note, setNote] = useState('');
   const [error, setError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (initialExpense) {
@@ -58,8 +59,10 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
     setError('');
   }, [initialExpense, isOpen]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSaving) return;
+
     if (!title.trim()) {
       setError('Please enter a title for the transaction.');
       return;
@@ -70,20 +73,25 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
       return;
     }
 
-    const transaction: ExpenseTransaction = {
-      id: initialExpense ? initialExpense.id : `exp-${Date.now()}`,
-      title: title.trim(),
-      amount: parsedAmount,
-      type,
-      category,
-      date,
-      note: note.trim() || undefined,
-      createdDate: initialExpense ? initialExpense.createdDate : new Date().toISOString(),
-      updatedDate: new Date().toISOString(),
-    };
+    try {
+      setIsSaving(true);
+      const transaction: ExpenseTransaction = {
+        id: initialExpense ? initialExpense.id : `exp-${Date.now()}`,
+        title: title.trim(),
+        amount: parsedAmount,
+        type,
+        category,
+        date,
+        note: note.trim() || undefined,
+        createdDate: initialExpense ? initialExpense.createdDate : new Date().toISOString(),
+        updatedDate: new Date().toISOString(),
+      };
 
-    saveExpense(transaction);
-    onClose();
+      await saveExpense(transaction);
+      onClose();
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -221,8 +229,8 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary">
-            {initialExpense ? 'Save Changes' : 'Add Transaction'}
+          <Button type="submit" variant="primary" disabled={isSaving}>
+            {isSaving ? 'Saving...' : initialExpense ? 'Save Changes' : 'Add Transaction'}
           </Button>
         </div>
       </form>

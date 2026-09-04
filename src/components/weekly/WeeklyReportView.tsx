@@ -104,7 +104,9 @@ export const WeeklyReportView: React.FC = () => {
           <button
             disabled={selectedWeek <= 1}
             onClick={() => setSelectedWeek((prev) => Math.max(1, prev - 1))}
-            className="p-1.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white disabled:opacity-30 cursor-pointer"
+            aria-label="Previous Week"
+            title="Previous Week"
+            className="p-1.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white disabled:opacity-30 cursor-pointer min-w-[36px] min-h-[36px] flex items-center justify-center"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
@@ -116,7 +118,9 @@ export const WeeklyReportView: React.FC = () => {
           <button
             disabled={selectedWeek >= 13}
             onClick={() => setSelectedWeek((prev) => Math.min(13, prev + 1))}
-            className="p-1.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white disabled:opacity-30 cursor-pointer"
+            aria-label="Next Week"
+            title="Next Week"
+            className="p-1.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white disabled:opacity-30 cursor-pointer min-w-[36px] min-h-[36px] flex items-center justify-center"
           >
             <ChevronRight className="w-4 h-4" />
           </button>

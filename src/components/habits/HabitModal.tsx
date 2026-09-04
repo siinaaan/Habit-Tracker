@@ -23,6 +23,7 @@ export const HabitModal: React.FC<HabitModalProps> = ({
   const [type, setType] = useState<HabitType>('checkbox');
   const [target, setTarget] = useState<number>(1);
   const [unit, setUnit] = useState('bool');
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (initialHabit) {
@@ -44,28 +45,33 @@ export const HabitModal: React.FC<HabitModalProps> = ({
     }
   }, [initialHabit, isOpen]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || isSaving) return;
 
-    const habit: Habit = {
-      id: initialHabit ? initialHabit.id : `habit-custom-${Date.now()}`,
-      name: name.trim(),
-      description: description.trim(),
-      category,
-      icon: icon || '⚡',
-      type,
-      target: Number(target) || 1,
-      unit: unit || 'count',
-      frequency: 'daily',
-      active: initialHabit ? initialHabit.active : true,
-      order: initialHabit ? initialHabit.order : 99,
-      createdDate: initialHabit ? initialHabit.createdDate : new Date().toISOString(),
-      updatedDate: new Date().toISOString(),
-    };
+    try {
+      setIsSaving(true);
+      const habit: Habit = {
+        id: initialHabit ? initialHabit.id : `habit-custom-${Date.now()}`,
+        name: name.trim(),
+        description: description.trim(),
+        category,
+        icon: icon || '⚡',
+        type,
+        target: Number(target) || 1,
+        unit: unit || 'count',
+        frequency: 'daily',
+        active: initialHabit ? initialHabit.active : true,
+        order: initialHabit ? initialHabit.order : 99,
+        createdDate: initialHabit ? initialHabit.createdDate : new Date().toISOString(),
+        updatedDate: new Date().toISOString(),
+      };
 
-    onSave(habit);
-    onClose();
+      await onSave(habit);
+      onClose();
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const categories: HabitCategory[] = [
@@ -208,8 +214,8 @@ export const HabitModal: React.FC<HabitModalProps> = ({
           <Button type="button" variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary">
-            {initialHabit ? 'Update Habit' : 'Create Habit'}
+          <Button type="submit" variant="primary" disabled={isSaving}>
+            {isSaving ? 'Saving...' : initialHabit ? 'Update Habit' : 'Create Habit'}
           </Button>
         </div>
       </form>

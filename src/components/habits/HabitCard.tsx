@@ -340,6 +340,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
               <button
                 disabled={isReadOnly}
                 onClick={handleCheckboxToggle}
+                aria-label={isCompleted ? `Mark "${habit.name}" as incomplete` : `Mark "${habit.name}" as complete`}
                 className={clsx(
                   'flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all border min-h-[38px]',
                   isReadOnly ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer',
@@ -377,6 +378,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
                     value={log?.numericValue ?? ''}
                     onChange={(e) => handleNumberChange(parseFloat(e.target.value) || 0)}
                     placeholder="0"
+                    aria-label={`${habit.name} value in ${habit.unit}`}
                     className={clsx(
                       "w-14 sm:w-16 bg-transparent text-sm font-bold text-white outline-none",
                       isReadOnly && "opacity-60 cursor-not-allowed"
@@ -387,6 +389,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
                 <button
                   disabled={isReadOnly}
                   onClick={handleCheckboxToggle}
+                  aria-label={isCompleted ? `Mark "${habit.name}" as incomplete` : `Mark "${habit.name}" as complete`}
                   className={clsx(
                     'p-2 rounded-xl border transition-colors min-h-[38px] min-w-[38px] flex items-center justify-center',
                     isReadOnly ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer',

@@ -22,13 +22,34 @@ import { PomodoroTimer } from './components/pomodoro/PomodoroTimer';
 import { ExpensesView } from './views/ExpensesView';
 import { NotesView } from './views/NotesView';
 import { SettingsView } from './views/SettingsView';
+import { NotFoundView } from './views/NotFoundView';
+import { useDocumentTitle } from './hooks/useDocumentTitle';
 import { Flame } from 'lucide-react';
+
+const VALID_TABS = new Set([
+  'dashboard',
+  'daily',
+  'expenses',
+  'notes',
+  'analytics',
+  'calendar',
+  'weekly',
+  'goals',
+  'reflections',
+  'learning',
+  'milestones',
+  'pomodoro',
+  'settings',
+]);
 
 const MainContent: React.FC = () => {
   const { activeTab } = useApp();
+  useDocumentTitle(activeTab);
+
+  const isValidTab = VALID_TABS.has(activeTab);
 
   return (
-    <main className="flex-1 min-w-0 h-full overflow-y-auto px-3 py-4 sm:p-5 md:p-8 max-w-7xl w-full mx-auto pb-24 md:pb-12">
+    <main className="flex-1 min-w-0 h-full overflow-y-auto px-3 py-4 sm:p-5 md:p-8 max-w-7xl w-full mx-auto pb-28 md:pb-12">
       {activeTab === 'dashboard' && <DashboardView />}
       {activeTab === 'daily' && <DailyTrackerView />}
       {activeTab === 'expenses' && <ExpensesView />}
@@ -42,6 +63,7 @@ const MainContent: React.FC = () => {
       {activeTab === 'milestones' && <MilestonesView />}
       {activeTab === 'pomodoro' && <PomodoroTimer />}
       {activeTab === 'settings' && <SettingsView />}
+      {!isValidTab && <NotFoundView />}
     </main>
   );
 };

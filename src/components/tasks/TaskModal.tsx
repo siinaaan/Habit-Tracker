@@ -26,6 +26,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [repeatType, setRepeatType] = useState<TaskRepeatType>('None');
   const [habitId, setHabitId] = useState<string>('');
   const [completed, setCompleted] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (initialTask) {
@@ -51,27 +52,32 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     }
   }, [initialTask, isOpen]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!title.trim() || isSaving) return;
 
-    const task: TaskItem = {
-      id: initialTask ? initialTask.id : `task-${Date.now()}`,
-      title: title.trim(),
-      description: description.trim(),
-      category: category.trim() || 'General',
-      priority,
-      dueDate,
-      dueTime: dueTime || undefined,
-      repeatType,
-      habitId: habitId || null,
-      completed,
-      createdDate: initialTask ? initialTask.createdDate : new Date().toISOString(),
-      updatedDate: new Date().toISOString(),
-    };
+    try {
+      setIsSaving(true);
+      const task: TaskItem = {
+        id: initialTask ? initialTask.id : `task-${Date.now()}`,
+        title: title.trim(),
+        description: description.trim(),
+        category: category.trim() || 'General',
+        priority,
+        dueDate,
+        dueTime: dueTime || undefined,
+        repeatType,
+        habitId: habitId || null,
+        completed,
+        createdDate: initialTask ? initialTask.createdDate : new Date().toISOString(),
+        updatedDate: new Date().toISOString(),
+      };
 
-    saveTask(task);
-    onClose();
+      await saveTask(task);
+      onClose();
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const categories = ['General', 'Spiritual', 'Learning', 'Fitness', 'Health', 'Discipline', 'Work', 'Personal'];
@@ -237,8 +243,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           <Button type="button" variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary">
-            {initialTask ? 'Save Task' : 'Add Task'}
+          <Button type="submit" variant="primary" disabled={isSaving}>
+            {isSaving ? 'Saving...' : initialTask ? 'Save Task' : 'Add Task'}
           </Button>
         </div>
       </form>

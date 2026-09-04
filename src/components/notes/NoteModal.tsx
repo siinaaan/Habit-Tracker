@@ -96,6 +96,7 @@ export const NoteModal: React.FC<NoteModalProps> = ({
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [color, setColor] = useState('default');
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (initialNote) {
@@ -111,23 +112,28 @@ export const NoteModal: React.FC<NoteModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !content.trim()) return;
+    if (!title.trim() || !content.trim() || isSaving) return;
 
-    const now = new Date().toISOString();
-    const noteData: Note = {
-      id: initialNote?.id || `note-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-      title: title.trim(),
-      content: content.trim(),
-      color,
-      archived: initialNote ? initialNote.archived : false,
-      createdDate: initialNote?.createdDate || now,
-      updatedDate: now,
-    };
+    try {
+      setIsSaving(true);
+      const now = new Date().toISOString();
+      const noteData: Note = {
+        id: initialNote?.id || `note-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        title: title.trim(),
+        content: content.trim(),
+        color,
+        archived: initialNote ? initialNote.archived : false,
+        createdDate: initialNote?.createdDate || now,
+        updatedDate: now,
+      };
 
-    onSave(noteData);
-    onClose();
+      await onSave(noteData);
+      onClose();
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -190,6 +196,7 @@ export const NoteModal: React.FC<NoteModalProps> = ({
                     type="button"
                     onClick={() => setColor(c.id)}
                     title={c.name}
+                    aria-label={`Color ${c.name}`}
                     className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all ${
                       c.pickerBgClass
                     } ${
@@ -210,8 +217,8 @@ export const NoteModal: React.FC<NoteModalProps> = ({
             <Button type="button" variant="secondary" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" variant="primary">
-              {initialNote ? 'Save Changes' : 'Create Note'}
+            <Button type="submit" variant="primary" disabled={isSaving}>
+              {isSaving ? 'Saving...' : initialNote ? 'Save Changes' : 'Create Note'}
             </Button>
           </div>
         </form>

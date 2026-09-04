@@ -163,7 +163,13 @@ export const Header: React.FC = () => {
               <div className="hidden lg:flex items-center gap-1.5 pl-1.5 border-l border-slate-800">
                 <div className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-300">
                   <UserIcon className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                  <span className="max-w-[140px] truncate font-medium">{user.email}</span>
+                  <a
+                    href={`mailto:${user.email}`}
+                    title={`Send email to ${user.email}`}
+                    className="max-w-[140px] truncate font-medium hover:text-indigo-300 transition-colors"
+                  >
+                    {user.email}
+                  </a>
                 </div>
 
                 <button
@@ -311,7 +317,13 @@ export const Header: React.FC = () => {
                 <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-950 border border-slate-800 text-xs">
                   <div className="flex items-center gap-2 min-w-0">
                     <UserIcon className="w-4 h-4 text-indigo-400 shrink-0" />
-                    <span className="truncate font-medium text-slate-300">{user.email}</span>
+                    <a
+                      href={`mailto:${user.email}`}
+                      title={`Send email to ${user.email}`}
+                      className="truncate font-medium text-slate-300 hover:text-indigo-300 transition-colors"
+                    >
+                      {user.email}
+                    </a>
                   </div>
                   <button
                     onClick={() => signOut()}

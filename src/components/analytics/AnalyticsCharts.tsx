@@ -146,12 +146,12 @@ export const AnalyticsCharts: React.FC = () => {
         </div>
 
         {/* Timeframe Filter Buttons */}
-        <div className="flex items-center bg-slate-900 border border-slate-800 p-1.5 rounded-2xl gap-1">
-          <Filter className="w-4 h-4 text-indigo-400 ml-2 mr-1 hidden sm:block" />
+        <div className="flex items-center overflow-x-auto max-w-full bg-slate-900 border border-slate-800 p-1.5 rounded-2xl gap-1 shrink-0 pb-1 sm:pb-1.5">
+          <Filter className="w-4 h-4 text-indigo-400 ml-2 mr-1 hidden sm:block shrink-0" />
           <button
             onClick={() => setTimeframe('daily')}
             className={clsx(
-              'px-3 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer',
+              'px-3 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap',
               timeframe === 'daily'
                 ? 'bg-indigo-600 text-white shadow-md'
                 : 'text-slate-400 hover:text-white'
@@ -162,7 +162,7 @@ export const AnalyticsCharts: React.FC = () => {
           <button
             onClick={() => setTimeframe('weekly')}
             className={clsx(
-              'px-3 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer',
+              'px-3 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap',
               timeframe === 'weekly'
                 ? 'bg-indigo-600 text-white shadow-md'
                 : 'text-slate-400 hover:text-white'
@@ -173,7 +173,7 @@ export const AnalyticsCharts: React.FC = () => {
           <button
             onClick={() => setTimeframe('monthly')}
             className={clsx(
-              'px-3 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer',
+              'px-3 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap',
               timeframe === 'monthly'
                 ? 'bg-indigo-600 text-white shadow-md'
                 : 'text-slate-400 hover:text-white'
@@ -184,7 +184,7 @@ export const AnalyticsCharts: React.FC = () => {
           <button
             onClick={() => setTimeframe('entire')}
             className={clsx(
-              'px-3 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer',
+              'px-3 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap',
               timeframe === 'entire'
                 ? 'bg-indigo-600 text-white shadow-md'
                 : 'text-slate-400 hover:text-white'
@@ -200,7 +200,7 @@ export const AnalyticsCharts: React.FC = () => {
         <CardTitle>
           <BarChart3 className="w-5 h-5 text-indigo-400" /> Daily Completion Rate (%)
         </CardTitle>
-        <div className="h-64 sm:h-80 w-full mt-4">
+        <div className="h-64 sm:h-80 w-full min-w-0 mt-4">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={displayData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.4} />
@@ -225,7 +225,7 @@ export const AnalyticsCharts: React.FC = () => {
         <CardTitle>
           <TrendingUp className="w-5 h-5 text-emerald-400" /> Overall Challenge Progress Trajectory (Day 1 - 90)
         </CardTitle>
-        <div className="h-64 sm:h-80 w-full mt-4">
+        <div className="h-64 sm:h-80 w-full min-w-0 mt-4">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={displayData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.4} />
@@ -257,7 +257,7 @@ export const AnalyticsCharts: React.FC = () => {
         {/* Pomodoro Sessions Trend */}
         <Card>
           <CardTitle>🍅 Pomodoro Sessions Sprinted</CardTitle>
-          <div className="h-48 w-full mt-3">
+          <div className="h-48 w-full min-w-0 mt-3">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={displayData.slice(0, 14)}>
                 <XAxis dataKey="day" stroke="#94a3b8" fontSize={10} />
@@ -274,7 +274,7 @@ export const AnalyticsCharts: React.FC = () => {
         {/* LeetCode Problems Trend */}
         <Card>
           <CardTitle>🧩 LeetCode Problems Solved</CardTitle>
-          <div className="h-48 w-full mt-3">
+          <div className="h-48 w-full min-w-0 mt-3">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={displayData.slice(0, 14)}>
                 <XAxis dataKey="day" stroke="#94a3b8" fontSize={10} />

@@ -8,7 +8,7 @@ import { CheckSquare, Square, Edit2, Trash2, Calendar, Clock, CheckCircle2 } fro
 import { clsx } from 'clsx';
 
 export const TaskList: React.FC = () => {
-  const { tasks, toggleTaskCompleted, deleteTask } = useApp();
+  const { tasks, toggleTaskCompleted, deleteTask, setIsAddTaskModalOpen } = useApp();
 
   const [editingTask, setEditingTask] = useState<TaskItem | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -26,6 +26,8 @@ export const TaskList: React.FC = () => {
           icon={<CheckCircle2 className="w-8 h-8 text-indigo-400" />}
           title="No Tasks Yet"
           description="Create your first task to start tracking actionable to-dos alongside your habits."
+          actionText="+ Create Task"
+          onAction={() => setIsAddTaskModalOpen(true)}
         />
       ) : (
         <div className="space-y-2.5">
@@ -43,7 +45,8 @@ export const TaskList: React.FC = () => {
               <div className="flex items-start sm:items-center gap-3 flex-1 min-w-0">
                 <button
                   onClick={() => toggleTaskCompleted(task.id)}
-                  className="mt-0.5 sm:mt-0 p-1 text-slate-400 hover:text-emerald-400 transition-colors cursor-pointer"
+                  aria-label={task.completed ? `Mark "${task.title}" as incomplete` : `Mark "${task.title}" as complete`}
+                  className="mt-0.5 sm:mt-0 p-1 text-slate-400 hover:text-emerald-400 transition-colors cursor-pointer min-w-[32px] min-h-[32px] flex items-center justify-center"
                 >
                   {task.completed ? (
                     <CheckSquare className="w-5 h-5 text-emerald-400" />
@@ -100,14 +103,16 @@ export const TaskList: React.FC = () => {
               <div className="flex items-center justify-end gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800/60 shrink-0">
                 <button
                   onClick={() => setEditingTask(task)}
-                  className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                  aria-label={`Edit task "${task.title}"`}
+                  className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white transition-colors cursor-pointer min-w-[32px] min-h-[32px] flex items-center justify-center"
                   title="Edit task"
                 >
                   <Edit2 className="w-3.5 h-3.5" />
                 </button>
                 <button
                   onClick={() => setDeletingId(task.id)}
-                  className="p-1.5 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-colors cursor-pointer"
+                  aria-label={`Delete task "${task.title}"`}
+                  className="p-1.5 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-colors cursor-pointer min-w-[32px] min-h-[32px] flex items-center justify-center"
                   title="Delete task"
                 >
                   <Trash2 className="w-3.5 h-3.5" />

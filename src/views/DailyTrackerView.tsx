@@ -4,6 +4,7 @@ import { HabitCard } from '../components/habits/HabitCard';
 import { Card, CardTitle } from '../components/ui/Card';
 import { ProgressBar } from '../components/ui/ProgressBar';
 import { Button } from '../components/ui/Button';
+import { EmptyState } from '../components/ui/EmptyState';
 import { Calendar, ChevronLeft, ChevronRight, CheckCircle2, Plus, Lock } from 'lucide-react';
 import type { HabitCategory } from '../types';
 import { formatDateToLocalStr, getTodayLocalDateStr, parseLocalDateStr } from '../utils/dateUtils';
@@ -76,21 +77,23 @@ export const DailyTrackerView: React.FC = () => {
         <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 p-1.5 rounded-2xl">
           <button
             onClick={handlePrevDay}
-            className="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white transition-colors cursor-pointer"
+            className="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white transition-colors cursor-pointer min-w-[38px] min-h-[38px] flex items-center justify-center"
             title="Previous Day"
+            aria-label="Previous Day"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
           <button
             onClick={handleToday}
-            className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold transition-all cursor-pointer shadow-md shadow-indigo-600/30"
+            className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold transition-all cursor-pointer shadow-md shadow-indigo-600/30 min-h-[38px] flex items-center justify-center"
           >
             Today
           </button>
           <button
             onClick={handleNextDay}
-            className="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white transition-colors cursor-pointer"
+            className="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white transition-colors cursor-pointer min-w-[38px] min-h-[38px] flex items-center justify-center"
             title="Next Day"
+            aria-label="Next Day"
           >
             <ChevronRight className="w-4 h-4" />
           </button>
@@ -124,36 +127,46 @@ export const DailyTrackerView: React.FC = () => {
         </Button>
       </div>
 
-      {/* Grouped Habit Categories */}
-      <div className="space-y-6">
-        {categories.map((cat) => {
-          const categoryHabits = activeHabits.filter((h) => h.category === cat.name);
-          if (!categoryHabits.length) return null;
+      {/* Grouped Habit Categories or Empty State */}
+      {activeHabits.length === 0 ? (
+        <EmptyState
+          icon={<CheckCircle2 className="w-8 h-8 text-indigo-400" />}
+          title="No Active Habits Found"
+          description="You don't have any active habits configured for daily tracking. Add your first habit to begin building your streak."
+          actionText="+ Add Habit"
+          onAction={() => setIsAddHabitModalOpen(true)}
+        />
+      ) : (
+        <div className="space-y-6">
+          {categories.map((cat) => {
+            const categoryHabits = activeHabits.filter((h) => h.category === cat.name);
+            if (!categoryHabits.length) return null;
 
-          return (
-            <Card key={cat.name} className="space-y-3">
-              <CardTitle className="text-base font-extrabold text-slate-200">
-                <span>{cat.icon}</span> {cat.label} ({categoryHabits.length})
-              </CardTitle>
+            return (
+              <Card key={cat.name} className="space-y-3">
+                <CardTitle className="text-base font-extrabold text-slate-200">
+                  <span>{cat.icon}</span> {cat.label} ({categoryHabits.length})
+                </CardTitle>
 
-              <div className="space-y-2.5">
-                {categoryHabits.map((habit) => {
-                  const log = selectedDayLogs.find((l) => l.habitId === habit.id);
-                  return (
-                    <HabitCard
-                      key={habit.id}
-                      habit={habit}
-                      log={log}
-                      onUpdateLog={updateHabitLog}
-                      isReadOnly={isSelectedDateLocked}
-                    />
-                  );
-                })}
-              </div>
-            </Card>
-          );
-        })}
-      </div>
+                <div className="space-y-2.5">
+                  {categoryHabits.map((habit) => {
+                    const log = selectedDayLogs.find((l) => l.habitId === habit.id);
+                    return (
+                      <HabitCard
+                        key={habit.id}
+                        habit={habit}
+                        log={log}
+                        onUpdateLog={updateHabitLog}
+                        isReadOnly={isSelectedDateLocked}
+                      />
+                    );
+                  })}
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };

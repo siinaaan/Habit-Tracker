@@ -24,6 +24,25 @@ export const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
   cancelText = 'Cancel',
   isDanger = true,
 }) => {
+  const [isConfirming, setIsConfirming] = React.useState(false);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      setIsConfirming(false);
+    }
+  }, [isOpen]);
+
+  const handleConfirm = async () => {
+    if (isConfirming) return;
+    setIsConfirming(true);
+    try {
+      await onConfirm();
+      onClose();
+    } finally {
+      setIsConfirming(false);
+    }
+  };
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title} maxWidth="sm">
       <div className="space-y-4 text-slate-300">
@@ -37,17 +56,15 @@ export const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
         </p>
 
         <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={onClose} disabled={isConfirming}>
             {cancelText}
           </Button>
           <Button
             variant={isDanger ? 'danger' : 'primary'}
-            onClick={() => {
-              onConfirm();
-              onClose();
-            }}
+            disabled={isConfirming}
+            onClick={handleConfirm}
           >
-            {confirmText}
+            {isConfirming ? 'Processing...' : confirmText}
           </Button>
         </div>
       </div>

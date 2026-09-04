@@ -96,7 +96,10 @@ export const BottomNavigation: React.FC = () => {
       )}
 
       {/* Fixed Bottom Navigation Bar */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-slate-800/80 px-3 py-1.5">
+      <nav
+        style={{ paddingBottom: 'calc(0.375rem + env(safe-area-inset-bottom, 0px))' }}
+        className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-slate-800/80 px-3 pt-1.5"
+      >
         <div className="flex items-center justify-around max-w-md mx-auto">
           {primaryItems.map((item) => {
             const isActive = activeTab === item.id;
@@ -104,6 +107,7 @@ export const BottomNavigation: React.FC = () => {
               <button
                 key={item.id}
                 onClick={() => handleSelect(item.id)}
+                aria-label={item.label}
                 className={clsx(
                   'flex flex-col items-center justify-center gap-1 py-1.5 px-3 rounded-xl transition-all cursor-pointer min-w-[64px] min-h-[44px]',
                   isActive ? 'text-indigo-400 font-bold' : 'text-slate-400 hover:text-slate-200'
@@ -117,6 +121,8 @@ export const BottomNavigation: React.FC = () => {
 
           <button
             onClick={() => setShowMoreMenu(!showMoreMenu)}
+            aria-label="More navigation options"
+            aria-expanded={showMoreMenu}
             className={clsx(
               'flex flex-col items-center justify-center gap-1 py-1.5 px-3 rounded-xl transition-all cursor-pointer min-w-[64px] min-h-[44px]',
               showMoreMenu || isSecondaryActive ? 'text-indigo-400 font-bold' : 'text-slate-400 hover:text-slate-200'

@@ -380,7 +380,7 @@ export const ExpensesView: React.FC = () => {
                           {expense.date}
                         </span>
                         {expense.note && (
-                          <span className="truncate italic text-slate-400 max-w-xs">
+                          <span className="truncate italic text-slate-400 max-w-[160px] sm:max-w-xs">
                             "{expense.note}"
                           </span>
                         )}
@@ -401,15 +401,17 @@ export const ExpensesView: React.FC = () => {
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => handleOpenEditModal(expense)}
-                        className="p-2 rounded-xl text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors cursor-pointer"
+                        className="p-2 rounded-xl text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors cursor-pointer min-w-[36px] min-h-[36px] flex items-center justify-center"
                         title="Edit transaction"
+                        aria-label={`Edit ${expense.title}`}
                       >
                         <Pencil className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => handleDeleteClick(expense)}
-                        className="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                        className="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer min-w-[36px] min-h-[36px] flex items-center justify-center"
                         title="Delete transaction"
+                        aria-label={`Delete ${expense.title}`}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>

@@ -63,21 +63,23 @@ export const CalendarGrid: React.FC = () => {
         <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 p-1.5 rounded-2xl">
           <button
             onClick={handlePrevDay}
-            className="p-1.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white transition-colors cursor-pointer"
+            className="p-1.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white transition-colors cursor-pointer min-w-[36px] min-h-[36px] flex items-center justify-center"
             title="Previous Day"
+            aria-label="Previous Day"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
           <button
             onClick={handleToday}
-            className="px-3 py-1 rounded-xl bg-indigo-600 text-white text-xs font-bold transition-all cursor-pointer shadow"
+            className="px-3 py-1 rounded-xl bg-indigo-600 text-white text-xs font-bold transition-all cursor-pointer shadow min-h-[36px] flex items-center justify-center"
           >
             Today (Day {currentDayNumber})
           </button>
           <button
             onClick={handleNextDay}
-            className="p-1.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white transition-colors cursor-pointer"
+            className="p-1.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white transition-colors cursor-pointer min-w-[36px] min-h-[36px] flex items-center justify-center"
             title="Next Day"
+            aria-label="Next Day"
           >
             <ChevronRight className="w-4 h-4" />
           </button>
@@ -111,7 +113,7 @@ export const CalendarGrid: React.FC = () => {
           <CalendarDays className="w-5 h-5 text-indigo-400" /> Challenge Day Grid (1 - 90)
         </CardTitle>
 
-        <div className="grid grid-cols-5 sm:grid-cols-9 md:grid-cols-10 gap-2 mt-4">
+        <div className="grid grid-cols-5 sm:grid-cols-9 md:grid-cols-10 gap-1.5 sm:gap-2 mt-4">
           {Array.from({ length: 90 }, (_, i) => {
             const dayNum = i + 1;
             const dateStr = getDateForDayNumber(dayNum);
@@ -135,8 +137,9 @@ export const CalendarGrid: React.FC = () => {
               <button
                 key={dayNum}
                 onClick={() => handleDayClick(dayNum)}
+                aria-label={`Day ${dayNum}${tracker ? `, ${completion}% completed` : ', not tracked'}`}
                 className={clsx(
-                  'flex flex-col items-center justify-center p-2 rounded-xl border text-xs font-bold transition-all cursor-pointer aspect-square relative',
+                  'flex flex-col items-center justify-center p-1 sm:p-2 rounded-xl border text-[11px] sm:text-xs font-bold transition-all cursor-pointer aspect-square relative',
                   statusBg,
                   isSelected && 'ring-2 ring-indigo-400 ring-offset-2 ring-offset-slate-950 scale-105 z-10',
                   isToday && 'border-indigo-500 shadow-indigo-500/30'
@@ -147,9 +150,9 @@ export const CalendarGrid: React.FC = () => {
                 )}
                 <span>Day {dayNum}</span>
                 {tracker ? (
-                  <span className="text-[10px] mt-0.5 opacity-80">{completion}%</span>
+                  <span className="text-[9px] sm:text-[10px] mt-0.5 opacity-80">{completion}%</span>
                 ) : (
-                  <span className="text-[10px] mt-0.5 opacity-40">•</span>
+                  <span className="text-[9px] sm:text-[10px] mt-0.5 opacity-40">•</span>
                 )}
               </button>
             );

@@ -311,7 +311,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (res.synced) {
       showToast(`Habit "${habit.name}" saved & synced!`, 'success');
     } else if (res.error) {
-      showToast(`Habit "${habit.name}" saved locally (Cloud error: ${res.error})`, 'warning');
+      console.warn('Habit cloud sync warning:', res.error);
+      showToast(`Habit "${habit.name}" saved locally. Sync will retry when online.`, 'info');
     } else {
       showToast(`Habit "${habit.name}" saved locally (offline)`, 'info');
     }
@@ -335,7 +336,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } else if (res.success) {
       showToast('Habit deleted locally.', 'info');
     } else if (res.error) {
-      showToast(`Failed to delete habit: ${res.error}`, 'error');
+      console.warn('Habit delete error:', res.error);
+      showToast('Unable to delete habit from cloud. Please try again.', 'error');
     }
   };
 
@@ -455,7 +457,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (res.error) {
       console.warn('Habit completion sync warning:', res.error);
-      showToast(`Failed to save check-in: ${res.error}`, 'error');
+      showToast("Unable to save check-in. Please try again.", 'error');
       // Rollback optimistic state if sync failed
       if (existingLog) {
         StorageService.saveLog(existingLog, userId);
@@ -521,7 +523,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (res.synced) {
       showToast(`Task "${task.title}" saved & synced!`, 'success');
     } else if (res.error) {
-      showToast(`Task "${task.title}" saved locally (Cloud error: ${res.error})`, 'warning');
+      console.warn('Task cloud sync warning:', res.error);
+      showToast(`Task "${task.title}" saved locally. Sync will retry when online.`, 'info');
     } else {
       showToast(`Task "${task.title}" saved locally (offline)`, 'info');
     }
@@ -549,7 +552,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (res.synced) {
         showToast(`Task "${task.title}" completed & synced!`, 'success');
       } else if (res.error) {
-        showToast(`Task completed locally (Cloud error: ${res.error})`, 'warning');
+        console.warn('Task completion sync warning:', res.error);
+        showToast(`Task completed locally. Sync will retry when online.`, 'info');
       } else {
         showToast(`Task "${task.title}" completed locally!`, 'info');
       }
@@ -583,11 +587,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setExpensesState(updatedExpenses);
 
     if (res.synced) {
-      showToast(`Expense transaction "${expense.title}" saved & synced!`, 'success');
+      showToast(`Expense "${expense.title}" saved & synced!`, 'success');
     } else if (res.error) {
-      showToast(`Transaction saved locally (Cloud error: ${res.error})`, 'warning');
+      console.warn('Expense sync warning:', res.error);
+      showToast(`Expense "${expense.title}" saved locally. Sync will retry when online.`, 'info');
     } else {
-      showToast(`Transaction "${expense.title}" saved locally (offline)`, 'info');
+      showToast(`Expense "${expense.title}" saved locally (offline)`, 'info');
     }
   };
 
@@ -615,7 +620,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (res.synced) {
       showToast(`Note "${note.title}" saved & synced!`, 'success');
     } else if (res.error) {
-      showToast(`Note saved locally (Cloud error: ${res.error})`, 'warning');
+      console.warn('Note sync warning:', res.error);
+      showToast(`Note "${note.title}" saved locally. Sync will retry when online.`, 'info');
     } else {
       showToast(`Note "${note.title}" saved locally (offline)`, 'info');
     }

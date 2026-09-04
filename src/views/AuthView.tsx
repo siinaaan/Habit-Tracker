@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import {
   Flame,
   Mail,
@@ -17,6 +18,14 @@ export const AuthView: React.FC = () => {
   const { signIn, signUp, resetPassword, isConfigured } = useAuth();
 
   const [mode, setMode] = useState<'login' | 'signup' | 'reset'>('login');
+  
+  const authTitle =
+    mode === 'login'
+      ? 'Habit Tracker — Login'
+      : mode === 'signup'
+      ? 'Habit Tracker — Create Account'
+      : 'Habit Tracker — Reset Password';
+  useDocumentTitle(undefined, authTitle);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
