@@ -7,7 +7,7 @@ import { Button } from '../components/ui/Button';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Calendar, ChevronLeft, ChevronRight, CheckCircle2, Plus, Lock } from 'lucide-react';
 import type { HabitCategory } from '../types';
-import { formatDateToLocalStr, getTodayLocalDateStr, parseLocalDateStr } from '../utils/dateUtils';
+import { formatDateToLocalStr, getTodayLocalDateStr, parseLocalDateStr, getRelativeDateLabel } from '../utils/dateUtils';
 
 export const DailyTrackerView: React.FC = () => {
   const {
@@ -63,13 +63,13 @@ export const DailyTrackerView: React.FC = () => {
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest flex-wrap">
             <span className="text-indigo-400">DAY CHECK-IN</span> • <span className="text-indigo-400">DAY {currentDayNumber} / 90</span>
             {isSelectedDateLocked && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold ml-1">
-                <Lock className="w-3 h-3" /> Previous day — Read only
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold ml-1">
+                <Lock className="w-3.5 h-3.5" /> View Only — Check-ins can only be recorded for today
               </span>
             )}
           </div>
           <h2 className="text-2xl font-black text-slate-100 mt-1 flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-indigo-400" /> {selectedDate}
+            <Calendar className="w-5 h-5 text-indigo-400" /> {getRelativeDateLabel(selectedDate)}
           </h2>
         </div>
 

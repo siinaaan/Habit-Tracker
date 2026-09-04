@@ -216,3 +216,34 @@ export interface Note {
   updatedDate: string;
 }
 
+export type DebtType = 'to_get' | 'to_give';
+export type DebtStatus = 'pending' | 'partially_paid' | 'paid';
+
+export interface DebtRepayment {
+  id: string;
+  debtId: string;
+  userId?: string;
+  amount: number;
+  date: string; // ISO YYYY-MM-DD
+  note?: string;
+  createdDate: string;
+  updatedDate: string;
+}
+
+export interface Debt {
+  id: string;
+  userId?: string;
+  type: DebtType;
+  personName: string;
+  amount: number;
+  description?: string;
+  date: string; // ISO YYYY-MM-DD
+  dueDate?: string; // ISO YYYY-MM-DD
+  notes?: string;
+  status: DebtStatus;
+  repayments: DebtRepayment[];
+  createdDate: string;
+  updatedDate: string;
+}
+
+

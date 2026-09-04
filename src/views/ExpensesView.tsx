@@ -1,7 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 import type { ExpenseTransaction, ExpenseType } from '../types';
 import { ExpenseModal } from '../components/expenses/ExpenseModal';
+import { DebtsView } from '../components/debts/DebtsView';
 import { ConfirmationDialog } from '../components/ui/ConfirmationDialog';
 import {
   Wallet,
@@ -27,7 +29,29 @@ const formatINR = (val: number) =>
   });
 
 export const ExpensesView: React.FC = () => {
+  const { user } = useAuth();
   const { expenses, deleteExpense } = useApp();
+
+  // Sub-tab state: Expenses vs Debts
+  const subTabKey = user?.id ? `expense_tracker_sub_tab_${user.id}` : 'expense_tracker_sub_tab_guest';
+  const [activeSubTab, setActiveSubTab] = useState<'expenses' | 'debts'>(() => {
+    try {
+      const saved = localStorage.getItem(subTabKey);
+      if (saved === 'debts' || saved === 'expenses') return saved;
+    } catch {
+      // fallback
+    }
+    return 'expenses';
+  });
+
+  const handleSubTabChange = (tab: 'expenses' | 'debts') => {
+    setActiveSubTab(tab);
+    try {
+      localStorage.setItem(subTabKey, tab);
+    } catch {
+      // fallback
+    }
+  };
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<ExpenseTransaction | null>(null);
@@ -116,8 +140,44 @@ export const ExpensesView: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
-      {/* Header Title & Action Button */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      {/* Sub-navigation Tabs: [ Expenses ] [ Debts ] */}
+      <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
+        <div className="inline-flex p-1 rounded-2xl bg-slate-900/90 border border-slate-800 shadow-inner">
+          <button
+            type="button"
+            onClick={() => handleSubTabChange('expenses')}
+            className={clsx(
+              'flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs tracking-wide transition-all cursor-pointer',
+              activeSubTab === 'expenses'
+                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+            )}
+          >
+            <Wallet className="w-4 h-4" />
+            <span>Expenses</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSubTabChange('debts')}
+            className={clsx(
+              'flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs tracking-wide transition-all cursor-pointer',
+              activeSubTab === 'debts'
+                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+            )}
+          >
+            <Coins className="w-4 h-4" />
+            <span>Debts</span>
+          </button>
+        </div>
+      </div>
+
+      {activeSubTab === 'debts' ? (
+        <DebtsView />
+      ) : (
+        <>
+          {/* Header Title & Action Button */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <div className="flex items-center gap-2.5">
             <div className="p-2.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
@@ -454,6 +514,8 @@ export const ExpensesView: React.FC = () => {
         cancelText="Cancel"
         isDanger={true}
       />
+        </>
+      )}
     </div>
   );
 };

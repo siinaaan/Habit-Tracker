@@ -10,8 +10,32 @@ import type {
   AppSettings,
   ExpenseTransaction,
   Note,
+  NavigationTab,
+  Debt,
+  DebtRepayment,
+  DebtStatus,
 } from '../types';
 import { DEFAULT_HABITS } from '../constants/defaultHabits';
+
+export const VALID_NAVIGATION_TABS: readonly NavigationTab[] = [
+  'dashboard',
+  'daily',
+  'analytics',
+  'calendar',
+  'weekly',
+  'goals',
+  'reflections',
+  'learning',
+  'milestones',
+  'pomodoro',
+  'expenses',
+  'notes',
+  'settings',
+] as const;
+
+export function isValidNavigationTab(tab: unknown): tab is NavigationTab {
+  return typeof tab === 'string' && VALID_NAVIGATION_TABS.includes(tab as NavigationTab);
+}
 
 const KEYS = {
   CHALLENGES: 'life_upgrade_challenge_cache',
@@ -25,6 +49,24 @@ const KEYS = {
   SETTINGS: 'life_upgrade_settings',
   EXPENSES: 'life_upgrade_expenses_cache',
   NOTES: 'life_upgrade_notes_cache',
+  DEBTS: 'life_upgrade_debts_cache',
+};
+
+export const getDebtPaidAmount = (debt: Debt): number => {
+  if (!debt.repayments || !Array.isArray(debt.repayments)) return 0;
+  return debt.repayments.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+};
+
+export const getDebtRemainingAmount = (debt: Debt): number => {
+  const paid = getDebtPaidAmount(debt);
+  return Math.max(0, debt.amount - paid);
+};
+
+export const getDebtStatus = (debt: Debt): DebtStatus => {
+  const paid = getDebtPaidAmount(debt);
+  if (paid >= debt.amount && debt.amount > 0) return 'paid';
+  if (paid > 0) return 'partially_paid';
+  return 'pending';
 };
 
 function getCacheKey(baseKey: string, userId?: string | null): string {
@@ -101,19 +143,29 @@ export class StorageService {
 
       // Clear habitService caches on fresh initialization
       localStorage.removeItem('life_upgrade_completions_cache');
-      localStorage.removeItem('life_upgrade_challenge_cache');
       localStorage.removeItem('life_upgrade_tasks_cache');
     }
   }
 
   // --- Challenges ---
   static getChallenges(userId?: string | null): Challenge[] {
-    return getItem<Challenge[]>(getCacheKey(KEYS.CHALLENGES, userId), []);
+    if (userId) {
+      const userKey = getCacheKey(KEYS.CHALLENGES, userId);
+      const userChallenges = getItem<Challenge[]>(userKey, []);
+      if (userChallenges.length > 0) return userChallenges;
+    }
+    return getItem<Challenge[]>(KEYS.CHALLENGES, []);
   }
 
   static getActiveChallenge(userId?: string | null): Challenge | null {
     const challenges = this.getChallenges(userId);
-    return challenges.find((c) => c.status === 'Active') || challenges[0] || null;
+    let active = challenges.find((c) => c.status === 'Active') || challenges[0] || null;
+    if (!active) {
+      this.initializeStorage();
+      const fallbackChallenges = getItem<Challenge[]>(KEYS.CHALLENGES, []);
+      active = fallbackChallenges.find((c) => c.status === 'Active') || fallbackChallenges[0] || null;
+    }
+    return active;
   }
 
   static saveChallenge(challenge: Challenge, userId?: string | null): Challenge {
@@ -169,7 +221,12 @@ export class StorageService {
 
   // --- Daily Trackers ---
   static getTrackers(userId?: string | null): DailyTracker[] {
-    return getItem<DailyTracker[]>(getCacheKey(KEYS.TRACKERS, userId), []);
+    if (userId) {
+      const userKey = getCacheKey(KEYS.TRACKERS, userId);
+      const userTrackers = getItem<DailyTracker[]>(userKey, []);
+      if (userTrackers.length > 0) return userTrackers;
+    }
+    return getItem<DailyTracker[]>(KEYS.TRACKERS, []);
   }
 
   static saveTracker(tracker: DailyTracker, userId?: string | null): DailyTracker {
@@ -375,6 +432,83 @@ export class StorageService {
     setItem(KEYS.NOTES, notes);
   }
 
+  // --- Debts ---
+  static getDebts(userId?: string | null): Debt[] {
+    const key = getCacheKey(KEYS.DEBTS, userId);
+    return getItem<Debt[]>(key, []).map((d) => ({
+      ...d,
+      repayments: Array.isArray(d.repayments) ? d.repayments : [],
+      status: getDebtStatus(d),
+    }));
+  }
+
+  static saveDebt(debt: Debt, userId?: string | null): Debt {
+    const key = getCacheKey(KEYS.DEBTS, userId);
+    const debts = getItem<Debt[]>(key, []);
+    const normalizedDebt: Debt = {
+      ...debt,
+      repayments: Array.isArray(debt.repayments) ? debt.repayments : [],
+      status: getDebtStatus(debt),
+      updatedDate: new Date().toISOString(),
+    };
+    const idx = debts.findIndex((d) => d.id === debt.id);
+    let updated: Debt[];
+    if (idx >= 0) {
+      debts[idx] = normalizedDebt;
+      updated = [...debts];
+    } else {
+      updated = [normalizedDebt, ...debts];
+    }
+    setItem(key, updated);
+    return normalizedDebt;
+  }
+
+  static deleteDebt(id: string, userId?: string | null): void {
+    const key = getCacheKey(KEYS.DEBTS, userId);
+    const debts = getItem<Debt[]>(key, []).filter((d) => d.id !== id);
+    setItem(key, debts);
+  }
+
+  static addDebtRepayment(debtId: string, repayment: DebtRepayment, userId?: string | null): Debt | null {
+    const key = getCacheKey(KEYS.DEBTS, userId);
+    const debts = getItem<Debt[]>(key, []);
+    const debt = debts.find((d) => d.id === debtId);
+    if (!debt) return null;
+
+    const existingRepayments = Array.isArray(debt.repayments) ? debt.repayments : [];
+    const updatedRepayments = [...existingRepayments, repayment];
+    const updatedDebt: Debt = {
+      ...debt,
+      repayments: updatedRepayments,
+      status: getDebtStatus({ ...debt, repayments: updatedRepayments }),
+      updatedDate: new Date().toISOString(),
+    };
+
+    const updated = debts.map((d) => (d.id === debtId ? updatedDebt : d));
+    setItem(key, updated);
+    return updatedDebt;
+  }
+
+  static deleteDebtRepayment(debtId: string, repaymentId: string, userId?: string | null): Debt | null {
+    const key = getCacheKey(KEYS.DEBTS, userId);
+    const debts = getItem<Debt[]>(key, []);
+    const debt = debts.find((d) => d.id === debtId);
+    if (!debt) return null;
+
+    const existingRepayments = Array.isArray(debt.repayments) ? debt.repayments : [];
+    const updatedRepayments = existingRepayments.filter((r) => r.id !== repaymentId);
+    const updatedDebt: Debt = {
+      ...debt,
+      repayments: updatedRepayments,
+      status: getDebtStatus({ ...debt, repayments: updatedRepayments }),
+      updatedDate: new Date().toISOString(),
+    };
+
+    const updated = debts.map((d) => (d.id === debtId ? updatedDebt : d));
+    setItem(key, updated);
+    return updatedDebt;
+  }
+
   // --- Settings ---
   static getSettings(): AppSettings {
     return getItem<AppSettings>(KEYS.SETTINGS, DEFAULT_SETTINGS);
@@ -499,7 +633,7 @@ export class StorageService {
     return newChallenge;
   }
 
-  static clearAllData(): void {
+  static clearAllData(userId?: string | null): void {
     localStorage.removeItem(KEYS.CHALLENGES);
     localStorage.removeItem(KEYS.HABITS);
     localStorage.removeItem(KEYS.TRACKERS);
@@ -511,6 +645,7 @@ export class StorageService {
     localStorage.removeItem(KEYS.SETTINGS);
     localStorage.removeItem(KEYS.EXPENSES);
     localStorage.removeItem(KEYS.NOTES);
+    localStorage.removeItem(KEYS.DEBTS);
 
     // Clear habitService caches
     localStorage.removeItem('life_upgrade_habits_cache');
@@ -519,6 +654,42 @@ export class StorageService {
     localStorage.removeItem('life_upgrade_tasks_cache');
     localStorage.removeItem('life_upgrade_expenses_cache');
     localStorage.removeItem('life_upgrade_notes_cache');
+    localStorage.removeItem('life_upgrade_debts_cache');
     localStorage.removeItem('life_upgrade_pending_sync_queue');
+
+    if (userId) {
+      localStorage.removeItem(`habit_tracker_active_tab_${userId}`);
+      localStorage.removeItem(`life_upgrade_debts_cache_${userId}`);
+    }
+  }
+
+  // Active Navigation Tab (User Scoped)
+  static getActiveTab(userId?: string | null): NavigationTab {
+    if (!userId) return 'dashboard';
+    const key = `habit_tracker_active_tab_${userId}`;
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return 'dashboard';
+      let parsed: unknown = raw;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        parsed = raw;
+      }
+      if (isValidNavigationTab(parsed)) {
+        return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return 'dashboard';
+  }
+
+  static setActiveTab(tab: NavigationTab, userId?: string | null): void {
+    if (!userId) return;
+    const key = `habit_tracker_active_tab_${userId}`;
+    if (isValidNavigationTab(tab)) {
+      setItem(key, tab);
+    }
   }
 }

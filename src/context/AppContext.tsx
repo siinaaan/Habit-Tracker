@@ -12,13 +12,16 @@ import type {
   NavigationTab,
   ExpenseTransaction,
   Note,
+  Debt,
 } from '../types';
-import { StorageService } from '../services/storage';
+import { StorageService, isValidNavigationTab } from '../services/storage';
 import { habitService } from '../services/habitService';
+import { debtService } from '../services/debtService';
 import { AnalyticsService } from '../services/analytics';
-import { getTodayLocalDateStr, isPreviousDateLocked } from '../utils/dateUtils';
+import { getTodayLocalDateStr, isDateLocked } from '../utils/dateUtils';
 import { resolveHabitId, isMatchingDefaultHabit } from '../utils/habitUtils';
 import confetti from 'canvas-confetti';
+import { useAuth } from './AuthContext';
 
 interface ToastMessage {
   id: string;
@@ -46,6 +49,7 @@ interface AppContextType {
   tasks: TaskItem[];
   expenses: ExpenseTransaction[];
   notes: Note[];
+  debts: Debt[];
   settings: AppSettings;
 
   // Add Task & Add Habit Modal State
@@ -89,6 +93,11 @@ interface AppContextType {
   saveExpense: (expense: ExpenseTransaction) => void;
   deleteExpense: (id: string) => void;
 
+  saveDebt: (debt: Debt) => Promise<void>;
+  deleteDebt: (id: string) => Promise<void>;
+  addDebtRepayment: (debtId: string, repaymentData: { amount: number; date: string; note?: string }) => Promise<void>;
+  deleteDebtRepayment: (debtId: string, repaymentId: string) => Promise<void>;
+
   saveNote: (note: Note) => void;
   deleteNote: (id: string) => void;
   toggleArchiveNote: (id: string) => void;
@@ -110,24 +119,44 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useAuth();
+  const userId = user?.id || null;
+
   // Navigation & Date State
-  const [activeTab, setActiveTab] = useState<NavigationTab>('dashboard');
+  const [activeTab, setActiveTabState] = useState<NavigationTab>(() => StorageService.getActiveTab(userId));
   const [todayDate, setTodayDate] = useState<string>(getTodayLocalDateStr());
   const [selectedDate, setSelectedDate] = useState<string>(getTodayLocalDateStr());
 
-  const isSelectedDateLocked = isPreviousDateLocked(selectedDate);
+  const isSelectedDateLocked = isDateLocked(selectedDate);
+
+  const setActiveTab = (tab: NavigationTab) => {
+    if (isValidNavigationTab(tab)) {
+      setActiveTabState(tab);
+      StorageService.setActiveTab(tab, userId);
+    }
+  };
+
+  useEffect(() => {
+    if (userId) {
+      const savedTab = StorageService.getActiveTab(userId);
+      setActiveTabState(savedTab);
+    }
+  }, [userId]);
 
   // Entities
-  const [activeChallenge, setActiveChallengeState] = useState<Challenge | null>(null);
-  const [habits, setHabitsState] = useState<Habit[]>([]);
-  const [trackers, setTrackersState] = useState<DailyTracker[]>([]);
-  const [logs, setLogsState] = useState<HabitLog[]>([]);
+  const [activeChallenge, setActiveChallengeState] = useState<Challenge | null>(
+    () => StorageService.getActiveChallenge(userId) || StorageService.getActiveChallenge()
+  );
+  const [habits, setHabitsState] = useState<Habit[]>(() => StorageService.getHabits(userId));
+  const [trackers, setTrackersState] = useState<DailyTracker[]>(() => StorageService.getTrackers(userId));
+  const [logs, setLogsState] = useState<HabitLog[]>(() => StorageService.getLogs(userId));
   const [goals, setGoalsState] = useState<Goal[]>([]);
   const [reflections, setReflectionsState] = useState<Reflection[]>([]);
   const [learningItems, setLearningItemsState] = useState<LearningItem[]>([]);
   const [tasks, setTasksState] = useState<TaskItem[]>([]);
   const [expenses, setExpensesState] = useState<ExpenseTransaction[]>([]);
   const [notes, setNotesState] = useState<Note[]>([]);
+  const [debts, setDebtsState] = useState<Debt[]>(() => StorageService.getDebts(userId));
   const [settings, setSettingsState] = useState<AppSettings>(StorageService.getSettings());
 
   // Add Task & Add Habit Modal State
@@ -174,6 +203,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const fetchedTasks = await habitService.getTasks();
     const fetchedExpenses = await habitService.getExpenses();
     const fetchedNotes = await habitService.getNotes();
+    const fetchedDebts = await debtService.getDebts();
 
     setActiveChallengeState(fetchedChallenge || StorageService.getActiveChallenge(userId));
     setHabitsState(fetchedHabits);
@@ -181,6 +211,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTasksState(fetchedTasks);
     setExpensesState(fetchedExpenses);
     setNotesState(fetchedNotes);
+    setDebtsState(fetchedDebts);
     
     setTrackersState(StorageService.getTrackers(userId));
     setGoalsState(StorageService.getGoals());
@@ -192,7 +223,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     refreshAllState();
 
+    if (userId) {
+      debtService.initRealtimeSubscriptions(userId);
+    }
     habitService.setRemoteChangeCallback(() => {
+      refreshAllState();
+    });
+    debtService.setRemoteChangeCallback(() => {
       refreshAllState();
     });
 
@@ -235,6 +272,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       habitService.setRemoteChangeCallback(null);
+      debtService.unsubscribeRealtime();
+      debtService.setRemoteChangeCallback(null);
     };
   }, []);
 
@@ -347,11 +386,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const challenge = activeChallenge || StorageService.getActiveChallenge(userId);
 
     const todayStr = getTodayLocalDateStr();
-    const isLocked = selectedDate < todayStr;
+    const isLocked = isDateLocked(selectedDate);
 
-    // Action-level enforcement: Reject modifications for locked previous dates
+    // Action-level enforcement: Reject modifications for any non-today date (previous or future)
     if (isLocked) {
-      showToast('🔒 Previous day records are locked and read-only.', 'warning');
+      const isFuture = selectedDate > todayStr;
+      showToast(
+        isFuture
+          ? '🔒 Future dates are locked. Check-ins can only be recorded for today.'
+          : '🔒 Previous day records are locked and read-only.',
+        'warning'
+      );
       return;
     }
 
@@ -604,6 +649,70 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Expense transaction deleted.', 'info');
   };
 
+  // Debts CRUD
+  const saveDebt = async (debt: Debt) => {
+    StorageService.saveDebt(debt, userId);
+    const existing = debts.find((d) => d.id === debt.id);
+    let res: { synced: boolean; error?: string };
+    if (existing) {
+      res = await debtService.updateDebt(debt.id, debt, userId);
+    } else {
+      res = await debtService.createDebt(debt, userId);
+    }
+    const updated = await debtService.getDebts(userId);
+    setDebtsState(updated);
+
+    if (res.synced) {
+      showToast(`Debt for "${debt.personName}" saved & synced!`, 'success');
+    } else if (!navigator.onLine) {
+      showToast(`Debt for "${debt.personName}" saved locally (offline)`, 'info');
+    } else {
+      showToast(`Could not save debt for "${debt.personName}". Please try again.`, 'error');
+    }
+  };
+
+  const deleteDebt = async (id: string) => {
+    StorageService.deleteDebt(id, userId);
+    await debtService.deleteDebt(id, userId);
+    const updated = await debtService.getDebts(userId);
+    setDebtsState(updated);
+    showToast('Debt record deleted.', 'info');
+  };
+
+  const addDebtRepayment = async (debtId: string, repaymentData: { amount: number; date: string; note?: string }) => {
+    const res = await debtService.addRepayment(debtId, repaymentData, userId);
+
+    // Immediately update local React state with the returned updated debt
+    if (res.debt) {
+      setDebtsState((prevDebts) =>
+        prevDebts.map((d) => (d.id === debtId ? res.debt! : d))
+      );
+    }
+
+    if (res.synced) {
+      const updated = await debtService.getDebts(userId);
+      setDebtsState(updated);
+      showToast('Repayment added successfully', 'success');
+    } else if (!navigator.onLine) {
+      showToast("You're offline. Repayment saved locally and will sync when you're online.", 'info');
+    } else {
+      showToast('Could not save repayment. Please try again.', 'error');
+    }
+  };
+
+  const deleteDebtRepayment = async (debtId: string, repaymentId: string) => {
+    const res = await debtService.deleteRepayment(debtId, repaymentId, userId);
+    const updated = await debtService.getDebts(userId);
+    setDebtsState(updated);
+    if (res.synced) {
+      showToast('Repayment record deleted.', 'info');
+    } else if (!navigator.onLine) {
+      showToast('Repayment deleted locally (offline).', 'info');
+    } else {
+      showToast('Could not delete repayment from server. Scheduled for sync.', 'warning');
+    }
+  };
+
   // Notes CRUD
   const saveNote = async (note: Note) => {
     StorageService.saveNote(note);
@@ -674,7 +783,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const clearAllData = () => {
-    StorageService.clearAllData();
+    StorageService.clearAllData(userId);
     refreshAllState();
     showToast('All application data cleared.', 'warning');
   };
@@ -698,6 +807,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         tasks,
         expenses,
         notes,
+        debts,
         settings,
         isAddTaskModalOpen,
         setIsAddTaskModalOpen,
@@ -727,6 +837,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toggleTaskCompleted,
         saveExpense,
         deleteExpense,
+        saveDebt,
+        deleteDebt,
+        addDebtRepayment,
+        deleteDebtRepayment,
         saveNote,
         deleteNote,
         toggleArchiveNote,

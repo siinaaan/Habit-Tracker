@@ -7,23 +7,26 @@ import type {
 } from '../types';
 import { isMatchingDefaultHabit } from '../utils/habitUtils';
 
+import { parseLocalDateStr, getTodayLocalDateStr } from '../utils/dateUtils';
+
 export class AnalyticsService {
   /**
    * Calculate current day number (1 - 90) based on challenge start date and target date
    */
   static calculateDayNumber(startDateStr: string, targetDateStr?: string): number {
-    const start = new Date(startDateStr);
-    start.setHours(0, 0, 0, 0);
+    try {
+      const start = parseLocalDateStr(startDateStr);
+      const target = targetDateStr ? parseLocalDateStr(targetDateStr) : parseLocalDateStr(getTodayLocalDateStr());
 
-    const target = targetDateStr ? new Date(targetDateStr) : new Date();
-    target.setHours(0, 0, 0, 0);
-
-    const diffTime = target.getTime() - start.getTime();
-    const diffDays = Math.floor(diffTime / (1000 * 3600 * 24));
-    
-    // Day 1 is the start date
-    const dayNum = diffDays + 1;
-    return Math.max(1, Math.min(90, dayNum));
+      const diffTime = target.getTime() - start.getTime();
+      const diffDays = Math.round(diffTime / (1000 * 3600 * 24));
+      
+      // Day 1 is the start date
+      const dayNum = diffDays + 1;
+      return Math.max(1, Math.min(90, dayNum));
+    } catch {
+      return 1;
+    }
   }
 
   /**
@@ -60,19 +63,19 @@ export class AnalyticsService {
    */
   static calculateDailyCompletionPercentage(
     logsForDay: HabitLog[],
-    activeHabits: Habit[]
+    activeHabits: Habit[],
+    userId?: string | null
   ): number {
     if (!activeHabits.length) return 0;
-    const activeHabitIds = new Set(activeHabits.map((h) => h.id));
-    const relevantLogs = logsForDay.filter((l) => activeHabitIds.has(l.habitId));
-
-    if (!relevantLogs.length) return 0;
-
+    
     let completedCount = 0;
-    relevantLogs.forEach((l) => {
-      if (l.completed) {
-        completedCount++;
-      }
+    activeHabits.forEach((h) => {
+      const isDone = logsForDay.some(
+        (l) =>
+          (l.habitId === h.id || isMatchingDefaultHabit(l.habitId, h.id, userId)) &&
+          Boolean(l.completed)
+      );
+      if (isDone) completedCount++;
     });
 
     return Math.round((completedCount / activeHabits.length) * 100);

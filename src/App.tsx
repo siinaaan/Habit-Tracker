@@ -25,28 +25,13 @@ import { SettingsView } from './views/SettingsView';
 import { NotFoundView } from './views/NotFoundView';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
 import { Flame } from 'lucide-react';
-
-const VALID_TABS = new Set([
-  'dashboard',
-  'daily',
-  'expenses',
-  'notes',
-  'analytics',
-  'calendar',
-  'weekly',
-  'goals',
-  'reflections',
-  'learning',
-  'milestones',
-  'pomodoro',
-  'settings',
-]);
+import { isValidNavigationTab } from './services/storage';
 
 const MainContent: React.FC = () => {
   const { activeTab } = useApp();
   useDocumentTitle(activeTab);
 
-  const isValidTab = VALID_TABS.has(activeTab);
+  const isValidTab = isValidNavigationTab(activeTab);
 
   return (
     <main className="flex-1 min-w-0 h-full overflow-y-auto px-3 py-4 sm:p-5 md:p-8 max-w-7xl w-full mx-auto pb-28 md:pb-12">

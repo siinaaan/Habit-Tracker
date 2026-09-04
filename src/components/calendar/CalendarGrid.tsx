@@ -4,24 +4,36 @@ import { Card, CardTitle } from '../ui/Card';
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import { clsx } from 'clsx';
 import { formatDateToLocalStr, getTodayLocalDateStr, parseLocalDateStr } from '../../utils/dateUtils';
+import { AnalyticsService } from '../../services/analytics';
+import { StorageService } from '../../services/storage';
 
 export const CalendarGrid: React.FC = () => {
   const {
     activeChallenge,
     trackers,
+    logs,
+    habits,
     selectedDate,
     setSelectedDate,
     setActiveTab,
     currentDayNumber,
   } = useApp();
 
-  if (!activeChallenge) return null;
+  // Ensure challenge data always resolves even during async load or cold start
+  const challenge = activeChallenge || StorageService.getActiveChallenge();
+  const startDateStr = challenge?.startDate || getTodayLocalDateStr();
 
   // Generate date string for any day number (1 - 90)
   const getDateForDayNumber = (dayNum: number): string => {
-    const d = parseLocalDateStr(activeChallenge.startDate);
-    d.setDate(d.getDate() + (dayNum - 1));
-    return formatDateToLocalStr(d);
+    try {
+      const d = parseLocalDateStr(startDateStr);
+      d.setDate(d.getDate() + (dayNum - 1));
+      return formatDateToLocalStr(d);
+    } catch {
+      const d = new Date();
+      d.setDate(d.getDate() + (dayNum - 1));
+      return formatDateToLocalStr(d);
+    }
   };
 
   const handleDayClick = (dayNum: number) => {
@@ -31,9 +43,13 @@ export const CalendarGrid: React.FC = () => {
   };
 
   const handlePrevDay = () => {
-    const curr = parseLocalDateStr(selectedDate);
-    curr.setDate(curr.getDate() - 1);
-    setSelectedDate(formatDateToLocalStr(curr));
+    try {
+      const curr = parseLocalDateStr(selectedDate);
+      curr.setDate(curr.getDate() - 1);
+      setSelectedDate(formatDateToLocalStr(curr));
+    } catch {
+      setSelectedDate(getTodayLocalDateStr());
+    }
   };
 
   const handleToday = () => {
@@ -41,10 +57,16 @@ export const CalendarGrid: React.FC = () => {
   };
 
   const handleNextDay = () => {
-    const curr = parseLocalDateStr(selectedDate);
-    curr.setDate(curr.getDate() + 1);
-    setSelectedDate(formatDateToLocalStr(curr));
+    try {
+      const curr = parseLocalDateStr(selectedDate);
+      curr.setDate(curr.getDate() + 1);
+      setSelectedDate(formatDateToLocalStr(curr));
+    } catch {
+      setSelectedDate(getTodayLocalDateStr());
+    }
   };
+
+  const activeHabits = habits.filter((h) => h.active);
 
   return (
     <div className="space-y-6">
@@ -57,6 +79,11 @@ export const CalendarGrid: React.FC = () => {
           <p className="text-xs text-slate-400">
             Click any day box to inspect or update daily habit logs.
           </p>
+          <div className="flex items-center gap-2 text-xs font-medium text-slate-400 mt-1">
+            <span>Selected: <strong className="text-indigo-300">{selectedDate}</strong></span>
+            <span>•</span>
+            <span>Day <strong className="text-indigo-300">{currentDayNumber}</strong> of 90</span>
+          </div>
         </div>
 
         {/* Date Stepper Controls */}
@@ -118,28 +145,51 @@ export const CalendarGrid: React.FC = () => {
             const dayNum = i + 1;
             const dateStr = getDateForDayNumber(dayNum);
             const tracker = trackers.find((t) => t.dayNumber === dayNum || t.date === dateStr);
-            const completion = tracker ? tracker.completionPercentage : 0;
+
+            // Compute completion from logs directly if tracker is missing or as validation
+            const dayLogs = logs.filter(
+              (l) =>
+                l.dailyTrackerId === `tracker-${dateStr}` ||
+                l.dailyTrackerId === dateStr ||
+                l.dailyTrackerId.includes(dateStr)
+            );
+            const computedCompletion = AnalyticsService.calculateDailyCompletionPercentage(dayLogs, activeHabits);
+            const completion = tracker
+              ? Math.max(tracker.completionPercentage, computedCompletion)
+              : computedCompletion;
+            const isTracked = Boolean(tracker || dayLogs.length > 0);
+
             const isSelected = selectedDate === dateStr;
             const isToday = currentDayNumber === dayNum;
 
             let statusBg = 'bg-slate-900 border-slate-800 text-slate-500';
-            if (tracker) {
+            if (isTracked) {
               if (completion >= 80) {
                 statusBg = 'bg-emerald-950/80 border-emerald-500/50 text-emerald-300 hover:bg-emerald-900';
               } else if (completion >= 50) {
                 statusBg = 'bg-amber-950/80 border-amber-500/50 text-amber-300 hover:bg-amber-900';
               } else if (completion > 0) {
                 statusBg = 'bg-rose-950/80 border-rose-500/50 text-rose-300 hover:bg-rose-900';
+              } else {
+                statusBg = 'bg-slate-900/90 border-slate-700 text-slate-400 hover:bg-slate-800';
               }
+            }
+
+            let formattedMonthDay = '';
+            try {
+              const dObj = parseLocalDateStr(dateStr);
+              formattedMonthDay = dObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+            } catch {
+              formattedMonthDay = dateStr;
             }
 
             return (
               <button
                 key={dayNum}
                 onClick={() => handleDayClick(dayNum)}
-                aria-label={`Day ${dayNum}${tracker ? `, ${completion}% completed` : ', not tracked'}`}
+                aria-label={`Day ${dayNum} (${formattedMonthDay})${isTracked ? `, ${completion}% completed` : ', not tracked'}`}
                 className={clsx(
-                  'flex flex-col items-center justify-center p-1 sm:p-2 rounded-xl border text-[11px] sm:text-xs font-bold transition-all cursor-pointer aspect-square relative',
+                  'flex flex-col items-center justify-center p-1 sm:p-2 rounded-xl border text-[10px] sm:text-xs font-bold transition-all cursor-pointer aspect-square relative',
                   statusBg,
                   isSelected && 'ring-2 ring-indigo-400 ring-offset-2 ring-offset-slate-950 scale-105 z-10',
                   isToday && 'border-indigo-500 shadow-indigo-500/30'
@@ -149,8 +199,9 @@ export const CalendarGrid: React.FC = () => {
                   <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-indigo-500 animate-ping" />
                 )}
                 <span>Day {dayNum}</span>
-                {tracker ? (
-                  <span className="text-[9px] sm:text-[10px] mt-0.5 opacity-80">{completion}%</span>
+                <span className="text-[8px] sm:text-[9px] text-slate-400 font-medium opacity-80">{formattedMonthDay}</span>
+                {isTracked ? (
+                  <span className="text-[9px] sm:text-[10px] mt-0.5 font-bold">{completion}%</span>
                 ) : (
                   <span className="text-[9px] sm:text-[10px] mt-0.5 opacity-40">•</span>
                 )}

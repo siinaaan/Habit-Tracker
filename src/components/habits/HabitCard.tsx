@@ -218,7 +218,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
                       "flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-purple-600 hover:bg-purple-500 text-white border border-purple-500 shadow-md shadow-purple-600/30 transition-all shrink-0 min-h-[38px]",
                       isReadOnly ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
                     )}
-                    title={isReadOnly ? "Previous day is read-only" : "Start Live Timer"}
+                    title={isReadOnly ? "View only — Check-ins can only be recorded for today" : "Start Live Timer"}
                   >
                     <Play className="w-3.5 h-3.5 fill-current" />
                     <span>Start</span>
@@ -231,7 +231,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
                       "flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-rose-600 hover:bg-rose-500 text-white border border-rose-500 shadow-md shadow-rose-600/30 transition-all animate-pulse shrink-0 min-h-[38px]",
                       isReadOnly ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
                     )}
-                    title={isReadOnly ? "Previous day is read-only" : "Stop & Save Elapsed Time"}
+                    title={isReadOnly ? "View only — Check-ins can only be recorded for today" : "Stop & Save Elapsed Time"}
                   >
                     <Square className="w-3.5 h-3.5 fill-current" />
                     <span>Stop</span>
@@ -299,7 +299,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
                     ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
                     : 'bg-slate-800 text-slate-300 border-slate-700 hover:text-white'
                 )}
-                title={isReadOnly ? "Previous day is read-only" : "Toggle completion status"}
+                title={isReadOnly ? "View only — Check-ins can only be recorded for today" : "Toggle completion status"}
               >
                 <div
                   className={clsx(
@@ -348,7 +348,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
                     ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500 shadow-md shadow-emerald-600/30'
                     : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
                 )}
-                title={isReadOnly ? "Previous day is read-only" : "Toggle completion status"}
+                title={isReadOnly ? "View only — Check-ins can only be recorded for today" : "Toggle completion status"}
               >
                 <div
                   className={clsx(
@@ -397,7 +397,7 @@ export const HabitCard: React.FC<HabitCardProps> = ({
                       ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
                       : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
                   )}
-                  title={isReadOnly ? "Previous day is read-only" : "Toggle status"}
+                  title={isReadOnly ? "View only — Check-ins can only be recorded for today" : "Toggle status"}
                 >
                   <CheckSquare className="w-4 h-4" />
                 </button>
